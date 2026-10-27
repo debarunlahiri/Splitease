@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material3.Icon
@@ -46,7 +47,14 @@ internal fun ProfileScreen(model: SplitEaseViewModel, logout: () -> Unit) {
         contentPadding = PaddingValues(24.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
-        item { Heading("Your space", "A little about you.") }
+        item {
+            Heading(
+                title = "Your space",
+                subtitle = "A little about you.",
+                icon = Icons.Rounded.AccountCircle,
+                label = "MAKE IT YOURS",
+            )
+        }
         if (model.needsReconnect)
             item {
                 Panel {
@@ -71,11 +79,6 @@ internal fun ProfileScreen(model: SplitEaseViewModel, logout: () -> Unit) {
                     fontWeight = FontWeight.Bold,
                 )
                 Text(user.getString("email"))
-                Text(
-                    "Signed in with Google",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                )
             }
         }
         item {

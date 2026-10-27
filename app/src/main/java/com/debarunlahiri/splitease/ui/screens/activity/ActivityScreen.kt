@@ -35,6 +35,8 @@ internal fun ActivityScreen(model: SplitEaseViewModel) {
             Heading(
                 "Your activity",
                 "The little updates, all together.",
+                icon = Icons.Rounded.NotificationsNone,
+                label = "STAY IN THE LOOP",
             )
         }
         if (model.notifications.isEmpty() && !model.busy)

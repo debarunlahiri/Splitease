@@ -19,7 +19,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.DoneAll
-import androidx.compose.material.icons.rounded.DonutSmall
 import androidx.compose.material.icons.rounded.FlightTakeoff
 import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.Handshake
@@ -36,6 +35,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.debarunlahiri.splitease.ui.components.Heading
 import com.debarunlahiri.splitease.ui.components.Symbol
 
 @Composable
@@ -44,18 +44,11 @@ internal fun LoginScreen(busy: Boolean, login: () -> Unit) {
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(28.dp),
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Icon(
-                Icons.Rounded.DonutSmall,
-                null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(32.dp),
-            )
-            Text("splitease", fontSize = 26.sp, fontWeight = FontWeight.Bold)
-        }
+        Heading(
+            title = "SplitEase",
+            subtitle = "Good times start together.",
+            label = "WELCOME",
+        )
         Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
             Box(
                 Modifier.fillMaxWidth()

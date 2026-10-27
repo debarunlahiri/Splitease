@@ -47,6 +47,8 @@ internal fun GroupsScreen(model: SplitEaseViewModel) {
             Heading(
                 "Hey, ${model.user?.optString("displayName")?.substringBefore(' ')}",
                 "Make room for good times.",
+                icon = Icons.Rounded.Groups,
+                label = "YOUR CIRCLES",
             )
         }
         item {

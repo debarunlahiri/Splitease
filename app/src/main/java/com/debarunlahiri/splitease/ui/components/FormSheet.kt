@@ -16,7 +16,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.debarunlahiri.splitease.ui.SplitEaseViewModel
 
@@ -37,10 +36,10 @@ internal fun FormSheet(
         ) {
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Text(
-                        title,
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
+                    Heading(
+                        title = title,
+                        subtitle = "Good times, shared fairly.",
+                        label = "LET’S GET IT SORTED",
                     )
                     if (model.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
                     model.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }

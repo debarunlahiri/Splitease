@@ -35,7 +35,7 @@ internal fun LazyListScope.GroupPeopleContent(
 ) {
     item {
         Text(
-            "Invite friends by email. They can join after accepting your invitation.",
+            "Invite friends by link or email to join your circle.",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         if (group.getString("createdBy") == model.userId) {
@@ -46,7 +46,8 @@ internal fun LazyListScope.GroupPeopleContent(
             }
         }
     }
-    items(model.groupInvitations, key = { "invitation-${it.getString("id")}" }) { invitation ->
+    val pendingInvitations = model.groupInvitations.filter { it.optString("status") == "PENDING" }
+    items(pendingInvitations, key = { "invitation-${it.getString("id")}" }) { invitation ->
         Panel {
             Text(
                 "Invitation to ${invitation.optionalText("inviteeEmail").ifBlank { "a group member" }}"
@@ -55,13 +56,12 @@ internal fun LazyListScope.GroupPeopleContent(
                 invitation.getString("status"),
                 style = MaterialTheme.typography.labelMedium,
             )
-            if (invitation.getString("status") == "PENDING")
-                TextButton(
-                    enabled = !model.busy,
-                    onClick = { model.revoke(invitation) },
-                ) {
-                    Text("Revoke invitation")
-                }
+            TextButton(
+                enabled = !model.busy,
+                onClick = { model.revoke(invitation) },
+            ) {
+                Text("Revoke invitation")
+            }
         }
     }
     items(group.getJSONArray("members").objects(), key = { it.getString("userId") }) { member ->

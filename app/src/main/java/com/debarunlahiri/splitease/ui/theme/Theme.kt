@@ -20,6 +20,7 @@ private val LightColors =
         tertiaryContainer = Color(0xFFEEDCFF),
         background = Color(0xFFF7F8F2),
         surface = Color(0xFFF7F8F2),
+        surfaceContainer = Color(0xFFE7EEE7),
         surfaceVariant = Color(0xFFE7EBE3),
         onSurface = Color(0xFF1C2822),
         outlineVariant = Color(0xFFD8DFD5),
@@ -32,6 +33,7 @@ private val DarkColors =
         tertiaryContainer = Color(0xFF4B3865),
         background = Color(0xFF101A15),
         surface = Color(0xFF101A15),
+        surfaceContainer = Color(0xFF1D2C23),
         surfaceVariant = Color(0xFF28372D),
         onSurface = Color(0xFFE0EBE0),
     )

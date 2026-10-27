@@ -16,6 +16,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        model.receiveInvite(intent.data)
         model.restore(this)
         if (intent.hasExtra("notificationId")) model.notificationTap()
         setContent { SpliteaseTheme { SplitEaseApp(model, this) } }
@@ -24,6 +25,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        model.receiveInvite(intent.data)
         if (intent.hasExtra("notificationId")) model.notificationTap()
     }
 }

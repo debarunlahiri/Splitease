@@ -2,6 +2,7 @@ package com.debarunlahiri.splitease.ui
 
 import android.app.Activity
 import android.app.Application
+import android.net.Uri
 import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -9,6 +10,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.debarunlahiri.splitease.auth.GoogleLogin
+import com.debarunlahiri.splitease.auth.PendingGroupInvite
 import com.debarunlahiri.splitease.auth.SessionPreferences
 import com.debarunlahiri.splitease.data.ApiClient
 import com.debarunlahiri.splitease.data.ApiException
@@ -54,6 +56,7 @@ class SplitEaseViewModel(application: Application) : AndroidViewModel(applicatio
 
     private val api = ApiClient()
     private val sessionPreferences = SessionPreferences(context)
+    private val pendingInvite = PendingGroupInvite(context)
     private val sessionMutex = Mutex()
     var restoringSession by mutableStateOf(true)
         private set
@@ -141,6 +144,9 @@ class SplitEaseViewModel(application: Application) : AndroidViewModel(applicatio
                 error = null
                 try {
                     block()
+                    if (user != null && !needsReconnect && pendingInvite.token() != null) {
+                        joinPendingInvite()
+                    }
                 } catch (exception: CancellationException) {
                     throw exception
                 } catch (exception: Exception) {
@@ -156,6 +162,72 @@ class SplitEaseViewModel(application: Application) : AndroidViewModel(applicatio
                     error = UserFacingError.message(exception)
                 } finally {
                     busy = false
+                }
+            }
+        }
+    }
+
+    fun receiveInvite(uri: Uri?) {
+        if (!pendingInvite.capture(uri)) return
+        message =
+            if (user == null) "Sign in to join your friend's group."
+            else "Opening your group invitation…"
+        if (user != null && !restoringSession) {
+            work { renew() }
+        }
+    }
+
+    private suspend fun joinPendingInvite() {
+        val token = pendingInvite.token() ?: return
+        renew()
+        val joined =
+            try {
+                JSONObject(api.request("groups/invite-links/join", "POST", json("token" to token)))
+            } catch (failure: ApiException) {
+                if (failure.status in setOf(400, 404, 409, 422)) {
+                    pendingInvite.clear(token)
+                    validateInput(false) {
+                        "This invite link is invalid or expired. Ask for a new link."
+                    }
+                }
+                throw failure
+            }
+        val groupId = joined.getString("groupId")
+        val group = api.objectAt("groups/$groupId")
+        selected = group
+        destination = AppDestination.Groups
+        loadHome()
+        loadGroup(group)
+        pendingInvite.clear(token)
+        message = "You're in! Welcome to ${group.getString("name")}."
+    }
+
+    fun shareInvite(share: (String) -> Unit) = work {
+        val group = selected ?: return@work
+        renew()
+        val link = JSONObject(api.request("groups/${group.getString("id")}/invite-links", "POST"))
+        val url = ApiClient.serverBase() + "/join#" + link.getString("token")
+        share("Join ${group.getString("name")} on SplitEase: $url")
+    }
+
+    fun refreshGroupMembers() {
+        if (busy || user == null || needsReconnect || !OfflineStore.networkAvailable(context)) return
+        val groupId = selected?.optString("id") ?: return
+        viewModelScope.launch {
+            operation.withLock {
+                try {
+                    renew()
+                    val group = api.objectAt("groups/$groupId")
+                    if (selected?.optString("id") == groupId) {
+                        selected = group
+                        groups = groups.map { if (it.optString("id") == groupId) group else it }
+                        localMaintenance("save updated members") { saveHome() }
+                    }
+                } catch (failure: CancellationException) {
+                    throw failure
+                } catch (failure: Exception) {
+                    // Keep the current member list during a transient background refresh failure.
+                    Log.w("SplitEaseSession", "Member refresh failed: ${failure.javaClass.simpleName}")
                 }
             }
         }
@@ -392,7 +464,8 @@ class SplitEaseViewModel(application: Application) : AndroidViewModel(applicatio
         groupInvitations =
             if (group.getString("createdBy") == userId) api.all("groups/$id/invitations")
             else emptyList()
-        selected = groups.firstOrNull { it.optString("id") == id } ?: group
+        selected = api.objectAt("groups/$id")
+        groups = groups.map { if (it.optString("id") == id) selected!! else it }
         groupDataAvailable = true
         showingSavedData = false
         account?.let {
