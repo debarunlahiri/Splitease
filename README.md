@@ -4,7 +4,7 @@ Native Kotlin and Jetpack Compose application for the SplitEase Spring Boot gate
 
 ## Connect your project
 
-1. Register `com.debarunlahiri.splitease` in your Firebase project. Register SHA-1 and SHA-256 fingerprints for each signing certificate and enable Google under Authentication → Sign-in method.
+1. Register `com.lambrk.splitease` in your Firebase project. Register SHA-1 and SHA-256 fingerprints for each signing certificate and enable Google under Authentication → Sign-in method.
 2. Download the matching `google-services.json` into `app/google-services.json`. It is ignored by Git. The Google Services Gradle plugin is applied when this file exists. Missing configuration leaves a clear sign-in error instead of a fake session.
 3. Set the following Gradle properties in your user-level Gradle properties or project properties:
 

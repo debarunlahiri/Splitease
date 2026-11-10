@@ -10,13 +10,13 @@ if (file("google-services.json").exists()) {
 }
 
 android {
-    namespace = "com.debarunlahiri.splitease"
+    namespace = "com.lambrk.splitease"
     compileSdk {
         version = release(37)
     }
 
     defaultConfig {
-        applicationId = "com.debarunlahiri.splitease"
+        applicationId = "com.lambrk.splitease"
         minSdk = 24
         targetSdk = 37
         buildConfigField(
@@ -59,6 +59,9 @@ ksp {
 
 dependencies {
     androidTestImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    // In-app network inspector: the real library in debug builds, an empty stand-in in release.
+    debugImplementation("com.github.chuckerteam.chucker:library:4.1.0")
+    releaseImplementation("com.github.chuckerteam.chucker:library-no-op:4.1.0")
     implementation("com.google.firebase:firebase-messaging")
     implementation("androidx.room:room-runtime:2.8.4")
     implementation("androidx.room:room-ktx:2.8.4")
@@ -66,6 +69,8 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.11.2")
     androidTestImplementation("androidx.room:room-testing:2.8.4")
     implementation("io.coil-kt:coil-compose:2.7.0")
+    implementation("io.coil-kt:coil-gif:2.7.0")
+    implementation("io.coil-kt:coil-svg:2.7.0")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
