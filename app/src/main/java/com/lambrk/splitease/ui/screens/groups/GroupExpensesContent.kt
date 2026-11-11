@@ -26,8 +26,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.lambrk.splitease.ui.SplitEaseViewModel
 import com.lambrk.splitease.ui.components.EmptyState
-import com.lambrk.splitease.ui.components.Symbol
 import com.lambrk.splitease.ui.components.ProfileAvatar
+import com.lambrk.splitease.ui.components.Symbol
 import com.lambrk.splitease.ui.util.memberName
 import com.lambrk.splitease.ui.util.memberPhotoUrl
 import com.lambrk.splitease.ui.util.money
@@ -41,7 +41,7 @@ internal fun LazyListScope.GroupExpensesContent(
 ) {
     val drafts = model.groupDrafts
     items(drafts, key = { it.snapshotKey }) { draft ->
-        val fields = JSONObject(draf
+        val fields = JSONObject(draft.json)
         Card(
             onClick = { onDraft(draft.snapshotKey) },
             enabled = !model.busy,

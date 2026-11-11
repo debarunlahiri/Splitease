@@ -29,14 +29,15 @@ android {
             "GOOGLE_WEB_CLIENT_ID",
             "\"${providers.gradleProperty("SPLITEASE_GOOGLE_WEB_CLIENT_ID").getOrElse("")}\"",
         )
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         release {
+            buildConfigField("String", "API_BASE_URL", "\"http://api.lambrk.com:9890/\"")
             optimization {
                 enable = false
             }
@@ -59,9 +60,7 @@ ksp {
 
 dependencies {
     androidTestImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
-    // In-app network inspector: the real library in debug builds, an empty stand-in in release.
     debugImplementation("com.github.chuckerteam.chucker:library:4.1.0")
-    releaseImplementation("com.github.chuckerteam.chucker:library-no-op:4.1.0")
     implementation("com.google.firebase:firebase-messaging")
     implementation("androidx.room:room-runtime:2.8.4")
     implementation("androidx.room:room-ktx:2.8.4")
@@ -84,6 +83,8 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
+    // Keep Activity Result permission callbacks compatible in both build variants.
+    implementation("androidx.fragment:fragment:1.8.5")
     implementation("androidx.compose.material3:material3:1.5.0-beta02")
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)

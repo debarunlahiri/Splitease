@@ -41,6 +41,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.tasks.await
 import org.json.JSONArray
+import org.json.JSONException
 import org.json.JSONObject
 
 class SplitEaseViewModel(application: Application) : AndroidViewModel(application) {
@@ -485,7 +486,24 @@ class SplitEaseViewModel(application: Application) : AndroidViewModel(applicatio
     fun login(activity: Activity) {
         if (busy) return
         work {
-            api.checkSignInAvailability()
+            validateInput(OfflineStore.internetAvailable(context)) {
+                "No internet connection. Reconnect to sign in."
+            }
+            val serverReady = try {
+                api.checkSignInAvailability()
+                true
+            } catch (_: IOException) {
+                false
+            } catch (_: JSONException) {
+                false
+            }
+            validateInput(serverReady) {
+                if (OfflineStore.internetAvailable(context)) {
+                    "The SplitEase server is unavailable. Try signing in again in a moment."
+                } else {
+                    "No internet connection. Reconnect to sign in."
+                }
+            }
             val expectedIdentity = account?.firebaseUid
             val token = GoogleLogin.signIn(activity)
             validateInput(
@@ -1149,9 +1167,8 @@ class SplitEaseViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun logout(activity: Activity) = work {
         sessionPreferences.signedOut()
-        // Always clear the local session, including when the gateway is unavailable.
         try {
-            if (OfflineStore.networkAvailable(context)) {
+            if (OfflineStore.internetAvailable(context)) {
                 if (preferences?.optBoolean("pushEnabled") == true) {
                     api.request(
                         "notifications/preferences",
@@ -1161,14 +1178,19 @@ class SplitEaseViewModel(application: Application) : AndroidViewModel(applicatio
                             "pushEnabled" to false,
                             "pushToken" to null,
                         ),
+                        timeoutSeconds = 8,
                     )
                 }
-                refreshToken?.let { api.request("auth/logout", "POST", json("refreshToken" to it)) }
+                refreshToken?.let {
+                    api.request("auth/logout", "POST", json("refreshToken" to it), timeoutSeconds = 8)
+                }
+            } else {
+                message = "Signed out on this device. Server sign-out was skipped because there’s no internet connection."
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
-            // Remote cleanup is best effort; explicit local sign-out must still complete.
+            message = "Signed out on this device. SplitEase couldn’t confirm sign-out with the server."
         } finally {
             try {
                 account?.let {

@@ -14,7 +14,9 @@ SPLITEASE_API_URL=http://192.168.0.135:9890/
 SPLITEASE_GOOGLE_WEB_CLIENT_ID=your-web-client-id.apps.googleusercontent.com
 ```
 
-HTTP and HTTPS addresses are supported. Android cleartext traffic is enabled. The default is `http://192.168.0.135:9890/`; use `http://10.0.2.2:9890/` for the Android emulator or your Mac's LAN address for a physical phone. Point the URL at the gateway root: the client adds `/api/v1/` and also accepts a configured URL already ending in `/api/v1/` without duplicating it.
+Debug builds default to `http://192.168.0.135:9890/`. Set `SPLITEASE_API_URL` to `http://10.0.2.2:9890/` for the Android emulator or your Mac's LAN address for a physical phone. The client accepts the gateway root or a URL already ending in `/api/v1/`.
+
+Release builds use `http://api.lambrk.com:9890/api/v1/` and allow cleartext traffic to that host. Chucker is included only in debug builds.
 
 4. On the identity service, configure `FIREBASE_PROJECT_ID` and Application Default Credentials (`GOOGLE_APPLICATION_CREDENTIALS` pointing to a server-only service-account file). Use the same Firebase project as Android. Apply identity migration `V3__firebase_identity.sql` through the existing Flyway process. Never put the server credential in the Android application.
 

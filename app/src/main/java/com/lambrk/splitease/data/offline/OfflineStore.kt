@@ -2,6 +2,7 @@ package com.lambrk.splitease.data.offline
 
 import android.content.Context
 import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import androidx.room.withTransaction
 import com.lambrk.splitease.data.ApiClient
 import com.lambrk.splitease.data.local.CachedSnapshot
@@ -64,6 +65,13 @@ class OfflineStore(context: Context) {
     }
 
     companion object {
+        fun internetAvailable(context: Context): Boolean {
+            val manager = context.getSystemService(ConnectivityManager::class.java)
+            val network = manager.activeNetwork ?: return false
+            return manager.getNetworkCapabilities(network)
+                ?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
+        }
+
         fun networkAvailable(context: Context): Boolean {
             val manager = context.getSystemService(ConnectivityManager::class.java)
             // A local SplitEase server can be reachable on Wi-Fi without internet access.

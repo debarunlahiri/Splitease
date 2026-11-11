@@ -1,9 +1,7 @@
 package com.lambrk.splitease.data
 
 import android.net.Uri
-import com.chuckerteam.chucker.api.ChuckerInterceptor
 import com.lambrk.splitease.BuildConfig
-import com.lambrk.splitease.SplitEaseApplication
 import java.io.File
 import java.io.IOException
 import java.util.UUID
@@ -11,6 +9,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.ConnectionPool
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -31,21 +30,18 @@ class ApiClient(private val baseUrl: String = ApiClient.serverBase()) {
 
     private val client =
         OkHttpClient.Builder()
-            .retryOnConnectionFailure(false)
+            // Let OkHttp silently retry when a pooled connection turns out to be dead (the
+            // server or the mobile network closed it while idle). With this off, the first
+            // request after a pause failed and only the second one worked. It is safe for
+            // writes because they carry an Idempotency-Key.
+            .retryOnConnectionFailure(true)
+            // Drop idle connections before the server's keep-alive window ends, so a stale
+            // one is rarely picked up in the first place.
+            .connectionPool(ConnectionPool(5, 30, TimeUnit.SECONDS))
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(25, TimeUnit.SECONDS)
             .callTimeout(35, TimeUnit.SECONDS)
-            .apply {
-                // Chucker lists every API call inside the app (debug builds only; the release
-                // build gets an empty stand-in). Tokens and idempotency keys are masked.
-                SplitEaseApplication.instance?.let { application ->
-                    addInterceptor(
-                        ChuckerInterceptor.Builder(application)
-                            .redactHeaders("Authorization", "Idempotency-Key")
-                            .build()
-                    )
-                }
-            }
+            .apply { configureNetworkInspection() }
             .build()
     private val attachmentClient by lazy {
         client.newBuilder()

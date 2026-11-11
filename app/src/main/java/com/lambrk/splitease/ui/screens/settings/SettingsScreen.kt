@@ -3,11 +3,15 @@
 package com.lambrk.splitease.ui.screens.settings
 
 import android.Manifest
+import android.app.Activity
 import android.content.ActivityNotFoundException
+import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -40,8 +44,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -49,7 +55,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import androidx.core.app.ActivityCompat
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.lambrk.splitease.BuildConfig
 import com.lambrk.splitease.ui.SplitEaseViewModel
 import com.lambrk.splitease.ui.components.Field
@@ -58,6 +69,32 @@ import com.lambrk.splitease.ui.components.SectionTitle
 import com.lambrk.splitease.ui.theme.ThemeMode
 
 private const val SUPPORT_EMAIL = "support@lambrk.com"
+
+/** True when SplitEase may show notifications (permission granted and not switched off in system settings). */
+private fun notificationsAllowed(context: Context): Boolean =
+    NotificationManagerCompat.from(context).areNotificationsEnabled()
+
+private fun Context.findActivity(): Activity? {
+    var current: Context = this
+    while (current is ContextWrapper) {
+        if (current is Activity) return current
+        current = current.baseContext
+    }
+    return null
+}
+
+/** Opens this app's notification page in the system settings. */
+private fun openNotificationSettings(context: Context): Boolean {
+    val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+        .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    return try {
+        context.startActivity(intent)
+        true
+    } catch (_: ActivityNotFoundException) {
+        false
+    }
+}
 
 @Composable
 internal fun SettingsScreen(
@@ -68,9 +105,41 @@ internal fun SettingsScreen(
     onLogout: () -> Unit,
 ) {
     val context = LocalContext.current
+    // What the phone really allows. The saved "push" preference alone is not enough: the user can
+    // refuse the permission, or switch notifications off later in the system settings.
+    var allowed by remember { mutableStateOf(notificationsAllowed(context)) }
+    var waitingForSettings by rememberSaveable { mutableStateOf(false) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                allowed = notificationsAllowed(context)
+                // Came back from the system settings after being sent there to allow notifications.
+                if (allowed && waitingForSettings) {
+                    waitingForSettings = false
+                    model.enablePush(true)
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     val permission =
         rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            if (granted) model.enablePush(true)
+            allowed = notificationsAllowed(context)
+            if (granted && allowed) {
+                model.enablePush(true)
+            } else {
+                model.message = "Allow notifications to get push alerts."
+                // After two refusals Android no longer shows the dialog, so point to the settings.
+                val activity = context.findActivity()
+                val blocked = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                    (activity == null || !ActivityCompat.shouldShowRequestPermissionRationale(
+                        activity,
+                        Manifest.permission.POST_NOTIFICATIONS,
+                    ))
+                if (blocked && openNotificationSettings(context)) waitingForSettings = true
+            }
         }
     val preferences = model.preferences
     val canEditPreferences = preferences != null && !model.busy && !model.needsReconnect
@@ -109,21 +178,6 @@ internal fun SettingsScreen(
                             displayName.trim() != currentName,
                     ) {
                         Text("Save name")
-                    }
-                    TextButton(
-                        onClick = { confirmingSignOut = true },
-                        enabled = model.user != null && !model.busy,
-                        colors = ButtonDefaults.textButtonColors(
-                            contentColor = MaterialTheme.colorScheme.error,
-                        ),
-                    ) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(Icons.AutoMirrored.Rounded.Logout, contentDescription = null)
-                            Text("Sign out")
-                        }
                     }
                 }
             }
@@ -165,19 +219,25 @@ internal fun SettingsScreen(
                     PreferenceSwitch(
                         title = "Push notifications",
                         description = "Get invitations and expense updates on this device.",
-                        checked = preferences?.optBoolean("pushEnabled") ?: false,
+                        // On only when it is saved AND the phone allows notifications.
+                        checked = (preferences?.optBoolean("pushEnabled") ?: false) && allowed,
                         enabled = canEditPreferences,
                         onCheckedChange = { enabled ->
-                            if (
-                                enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                            allowed = notificationsAllowed(context)
+                            when {
+                                !enabled -> model.enablePush(false)
+                                allowed -> model.enablePush(true)
+                                Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                                     ContextCompat.checkSelfPermission(
                                         context,
                                         Manifest.permission.POST_NOTIFICATIONS,
-                                    ) != PackageManager.PERMISSION_GRANTED
-                            ) {
-                                permission.launch(Manifest.permission.POST_NOTIFICATIONS)
-                            } else {
-                                model.enablePush(enabled)
+                                    ) != PackageManager.PERMISSION_GRANTED ->
+                                    permission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                else -> {
+                                    // Permission is there but notifications are switched off in the system.
+                                    model.message = "Turn on notifications for SplitEase, then come back."
+                                    if (openNotificationSettings(context)) waitingForSettings = true
+                                }
                             }
                         },
                     )
@@ -211,6 +271,25 @@ internal fun SettingsScreen(
                             Icon(Icons.Rounded.Email, contentDescription = null)
                             Text("Contact support")
                         }
+                    }
+                }
+            }
+            // Last action on the screen, directly above the About / version section.
+            item {
+                OutlinedButton(
+                    onClick = { confirmingSignOut = true },
+                    enabled = model.user != null && !model.busy,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error,
+                    ),
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.AutoMirrored.Rounded.Logout, contentDescription = null)
+                        Text("Sign out")
                     }
                 }
             }
