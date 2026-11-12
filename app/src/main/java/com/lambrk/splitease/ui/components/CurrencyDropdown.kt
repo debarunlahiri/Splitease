@@ -66,7 +66,8 @@ internal fun CurrencyDropdown(
     var query by remember { mutableStateOf("") }
     var searching by remember { mutableStateOf(false) }
     val focus = LocalFocusManager.current
-    val locale = Locale.getDefault()
+    // Read from the configuration so the list updates if the language changes.
+    val locale = androidx.compose.ui.platform.LocalConfiguration.current.locales[0] ?: Locale.getDefault()
     val options = remember(locale) { currencyOptions(locale) }
     val selected = options.firstOrNull { it.code == value }
     val selectedLabel = selected?.label ?: value

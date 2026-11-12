@@ -1,6 +1,21 @@
 package com.lambrk.splitease.ui.forms
 
 import android.content.Intent
+import android.Manifest
+import android.content.pm.PackageManager
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.core.content.ContextCompat
+import com.lambrk.splitease.data.DeviceContact
+import com.lambrk.splitease.data.loadDeviceContacts
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -36,55 +51,166 @@ import androidx.compose.ui.unit.dp
 import com.lambrk.splitease.data.objects
 import com.lambrk.splitease.ui.SplitEaseViewModel
 import com.lambrk.splitease.ui.components.Field
-import com.lambrk.splitease.ui.components.FormSheet
+import com.lambrk.splitease.ui.components.FormScreen
+import com.lambrk.splitease.ui.components.FormStep
 import com.lambrk.splitease.ui.components.ProfileAvatar
 import com.lambrk.splitease.ui.util.optionalText
 
 @Composable
 internal fun InviteMemberSheet(model: SplitEaseViewModel, dismiss: () -> Unit) {
     val context = LocalContext.current
-    var email by remember { mutableStateOf("") }
+    var query by remember { mutableStateOf("") }
     var choosingFriends by remember { mutableStateOf(false) }
-    FormSheet("Better together", model, dismiss) {
-        OutlinedButton(
-            enabled = !model.busy,
-            modifier = Modifier.fillMaxWidth(),
-            onClick = { choosingFriends = true },
-        ) {
-            Icon(Icons.Rounded.People, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text("Invite from Friends")
-        }
-        Text("Share a link so friends can sign in and join this group. Links are valid for 7 days.")
-        OutlinedButton(
-            enabled = !model.busy,
-            modifier = Modifier.fillMaxWidth(),
-            onClick = {
-                model.shareInvite { invitation ->
-                    val intent = Intent(Intent.ACTION_SEND).apply {
-                        type = "text/plain"
-                        putExtra(Intent.EXTRA_TEXT, invitation)
-                    }
-                    context.startActivity(Intent.createChooser(intent, "Share group invitation"))
-                }
-            },
-        ) {
-            Icon(Icons.Rounded.Share, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text("Share invite link")
-        }
-        Text("Or invite a friend by email.")
-        Text("Invite a friend using the email they use to sign in to SplitEase.")
-        Text("They can accept after signing in, even if they haven't joined yet.")
-        Field(email, { email = it }, "Friend's email address", keyboardType = KeyboardType.Email)
-        Button(
-            enabled = !model.busy && email.isNotBlank(),
-            onClick = { model.invite(email, dismiss) },
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text("Send invitation")
+    var contacts by remember { mutableStateOf<List<DeviceContact>?>(null) }
+    // Picked people by key (email, else phone): what the Invite button will send to.
+    var picked by remember { mutableStateOf(linkedMapOf<String, DeviceContact>()) }
+    var contactsAllowed by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { contactsAllowed = it }
+    LaunchedEffect(contactsAllowed) {
+        if (contactsAllowed && contacts == null) {
+            contacts = try { loadDeviceContacts(context) } catch (_: Exception) { emptyList() }
+        } else if (!contactsAllowed) {
+            permission.launch(Manifest.permission.READ_CONTACTS)
         }
     }
+    val group = model.selected
+    val memberEmails = group?.optJSONArray("members")?.objects().orEmpty()
+        .map { it.optString("email").lowercase() }.filter { it.isNotBlank() }.toSet()
+    val memberNames = group?.optJSONArray("members")?.objects().orEmpty()
+        .map { com.lambrk.splitease.ui.util.memberName(it.optString("userId"), model).lowercase() }.toSet()
+    val needle = query.trim().lowercase()
+    fun matches(vararg text: String?) = needle.isEmpty() || text.any { it?.lowercase()?.contains(needle) == true }
+    fun keyOf(c: DeviceContact) = c.email ?: c.phone ?: c.id
+    val typedEmail = needle.takeIf { android.util.Patterns.EMAIL_ADDRESS.matcher(it).matches() }
+    val shown = (contacts ?: emptyList()).filter {
+        it.email !in memberEmails && it.name.lowercase() !in memberNames && matches(it.name, it.email, it.phone)
+    }.take(100)
+    val enabled = !model.busy
+    fun toggle(c: DeviceContact) {
+        picked = LinkedHashMap(picked).also { if (keyOf(c) in it) it.remove(keyOf(c)) else it[keyOf(c)] = c }
+    }
+
+    fun sendInvites() {
+        val chosen = picked.values.toList()
+        val emails = chosen.mapNotNull { it.email }
+        val phones = chosen.filter { it.email == null }.mapNotNull { it.phone }
+        fun smsLink() {
+            if (phones.isEmpty()) return
+            model.shareInvite { text ->
+                val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:" + phones.joinToString(";") { Uri.encode(it) }))
+                    .putExtra("sms_body", text)
+                context.startActivity(Intent.createChooser(intent, "Invite by message"))
+            }
+        }
+        if (emails.isNotEmpty()) {
+            model.inviteMany(emails) {
+                smsLink()
+                if (phones.isEmpty()) dismiss()
+            }
+        } else {
+            smsLink()
+        }
+    }
+
+    FormScreen(
+        title = "Invite to group",
+        model = model,
+        dismiss = dismiss,
+        submitLabel = if (picked.isEmpty()) "Pick people to invite" else "Invite ${picked.size} ${if (picked.size == 1) "person" else "people"}",
+        submitEnabled = picked.isNotEmpty(),
+        onSubmit = ::sendInvites,
+        steps = listOf(
+            FormStep("Invite your people", "Pick people from your contacts, or share a link.") {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    leadingIcon = { Icon(Icons.Rounded.Search, null) },
+                    placeholder = { Text("Search contacts or type an email") },
+                    shape = RoundedCornerShape(18.dp),
+                )
+                if (picked.isNotEmpty()) {
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        picked.values.forEach { c ->
+                            androidx.compose.material3.Surface(
+                                shape = RoundedCornerShape(50),
+                                color = androidx.compose.material3.MaterialTheme.colorScheme.inverseSurface,
+                                modifier = Modifier.clickable { toggle(c) },
+                            ) {
+                                Text(
+                                    c.name.substringBefore(" "),
+                                    Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                                    color = androidx.compose.material3.MaterialTheme.colorScheme.inverseOnSurface,
+                                    style = androidx.compose.material3.MaterialTheme.typography.labelLarge,
+                                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                                )
+                            }
+                        }
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedButton(enabled = enabled, modifier = Modifier.weight(1f), onClick = { choosingFriends = true }) {
+                        Icon(Icons.Rounded.People, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Friends")
+                    }
+                    OutlinedButton(
+                        enabled = enabled,
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            model.shareInvite { invitation ->
+                                val intent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_TEXT, invitation)
+                                }
+                                context.startActivity(Intent.createChooser(intent, "Share group invitation"))
+                            }
+                        },
+                    ) {
+                        Icon(Icons.Rounded.Share, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Share link")
+                    }
+                }
+                Text(
+                    "Invite links are valid for 7 days. People with an email get an invitation; people with only a phone number get the link by message.",
+                    style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                    color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (typedEmail != null && typedEmail !in memberEmails && shown.none { it.email == typedEmail }) {
+                    val typed = DeviceContact("typed:$typedEmail", typedEmail.substringBefore('@'), null, typedEmail)
+                    PersonRow(typedEmail, "Invite by email", null, keyOf(typed) in picked, enabled, null, {}) { toggle(typed) }
+                }
+                if (!contactsAllowed) {
+                    Text(
+                        "Allow access to your contacts to invite people straight from your phone book. Contacts stay on your phone.",
+                        style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                    )
+                    OutlinedButton(onClick = { permission.launch(Manifest.permission.READ_CONTACTS) }) { Text("Show my contacts") }
+                } else {
+                    shown.forEach { contact ->
+                        PersonRow(
+                            name = contact.name,
+                            detail = contact.phone ?: contact.email.orEmpty(),
+                            photo = null,
+                            selected = keyOf(contact) in picked,
+                            enabled = enabled,
+                            action = null,
+                            onAction = {},
+                        ) { toggle(contact) }
+                    }
+                    if (contacts != null && shown.isEmpty() && typedEmail == null) {
+                        Text("No contacts found.", color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            },
+        ),
+    )
     if (choosingFriends) {
         GroupFriendPicker(
             model = model,

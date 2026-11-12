@@ -86,6 +86,15 @@ class ApiClient(private val baseUrl: String = ApiClient.serverBase()) {
         }
     }
 
+    /** Downloads any file from the API into [target] (used for the Excel export). */
+    internal suspend fun download(path: String, target: File) {
+        val request = requestBuilder(path)
+        transferAttachment(request) { response ->
+            val body = response.body ?: throw IOException("Response is empty")
+            body.byteStream().use { source -> target.outputStream().use { source.copyTo(it) } }
+        }
+    }
+
     private suspend fun transferAttachment(request: Request.Builder, consume: (Response) -> Unit) {
         withContext(Dispatchers.IO) {
             repeat(2) { attempt ->

@@ -5,6 +5,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.People
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -28,6 +29,7 @@ internal fun SplitEaseBottomBar(
             listOf(
                 AppDestination.Groups,
                 AppDestination.Friends,
+                AppDestination.Ledger,
                 AppDestination.Activity,
                 AppDestination.Profile,
             ).forEach {
@@ -36,6 +38,7 @@ internal fun SplitEaseBottomBar(
                     when (destination) {
                         AppDestination.Groups -> "Groups"
                         AppDestination.Friends -> "Friends"
+                        AppDestination.Ledger -> "Ledger"
                         AppDestination.Activity -> "Activity"
                         else -> "You"
                     }
@@ -43,6 +46,7 @@ internal fun SplitEaseBottomBar(
                     when (destination) {
                         AppDestination.Groups -> Icons.Rounded.Groups
                         AppDestination.Friends -> Icons.Rounded.People
+                        AppDestination.Ledger -> Icons.Rounded.ReceiptLong
                         AppDestination.Activity -> Icons.Rounded.Notifications
                         else -> Icons.Rounded.Person
                     }

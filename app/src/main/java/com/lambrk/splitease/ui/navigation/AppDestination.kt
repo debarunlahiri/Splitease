@@ -3,6 +3,7 @@ package com.lambrk.splitease.ui.navigation
 enum class AppDestination {
     Groups,
     Friends,
+    Ledger,
     Activity,
     Profile,
     Settings,

@@ -246,6 +246,148 @@ class SplitEaseViewModel(application: Application) : AndroidViewModel(applicatio
         share("Join ${group.getString("name")} on SplitEase: $url")
     }
 
+    /** Invoices I issued or was billed on, filtered by what was last searched. */
+    var invoices by mutableStateOf<List<JSONObject>>(emptyList())
+    var invoicesLoading by mutableStateOf(false)
+
+    /** Searches my invoices by number, name, group or item (everything when [query] is blank). */
+    fun searchInvoices(query: String) {
+        viewModelScope.launch {
+            invoicesLoading = true
+            try {
+                operation.withLock {
+                    try {
+                        renew()
+                        invoices = api.all("invoices" + if (query.isNotBlank()) "?q=" + android.net.Uri.encode(query.trim()) else "")
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                    }
+                }
+            } finally {
+                invoicesLoading = false
+            }
+        }
+    }
+
+    /** The ledger: what other people still owe me, per person. Null until first loaded. */
+    var ledger by mutableStateOf<JSONObject?>(null)
+
+    fun refreshLedger() = work {
+        renew()
+        ledger = api.objectAt("ledger")
+    }
+
+    /**
+     * Downloads the ledger as a formatted Excel file (or CSV) and hands it to [done] so it can be shared.
+     * [scope] is "all", "owed" (what others owe me) or "owe" (what I owe), matching what the screen is showing.
+     * Every export gets its own file name, so earlier ones are never overwritten.
+     */
+    internal fun exportLedger(scope: String, excel: Boolean = true, done: (java.io.File) -> Unit) = work {
+        renew()
+        val label = when (scope) { "owed" -> "owed-to-you"; "owe" -> "you-owe"; else -> "all" }
+        val stamp = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"))
+        val extension = if (excel) "xlsx" else "csv"
+        val file = java.io.File(context.cacheDir, "expense-attachments/ledger/splitease-ledger-$label-$stamp.$extension")
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            file.parentFile?.mkdirs()
+            // Keep only the last few exports around.
+            file.parentFile?.listFiles()?.sortedByDescending { it.lastModified() }?.drop(5)?.forEach { it.delete() }
+        }
+        api.download("ledger/export.$extension?scope=$scope", file)
+        done(file)
+    }
+
+    /** One reminder covering everything [personId] owes me. */
+    fun remindPerson(personId: String, push: Boolean, email: Boolean) = work {
+        renew()
+        api.request(
+            "ledger/remind",
+            "POST",
+            json(
+                "userId" to personId,
+                "channels" to JSONArray(listOfNotNull(if (push) "PUSH" else null, if (email) "EMAIL" else null)),
+            ),
+        )
+        message = if (email && !push) "Email queued" else "Reminder sent"
+    }
+
+    /** Open "I've paid" claims in the open group: ones waiting on me as the payer, and ones I made. */
+    var claims by mutableStateOf<List<JSONObject>>(emptyList())
+
+    fun refreshClaims() {
+        val group = selected ?: return
+        viewModelScope.launch {
+            operation.withLock {
+                try {
+                    renew()
+                    val loaded = JSONArray(api.request("expenses/group/${group.getString("id")}/claims")).objects()
+                    if (selected?.optString("id") == group.optString("id")) claims = loaded
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                }
+            }
+        }
+    }
+
+    /** "I've paid": tells the payer so they can check and confirm. Full remaining share when [amount] is null. */
+    internal fun claimPayment(expenseId: String, amount: String?) = work {
+        val value = amount?.toBigDecimalOrNull()
+        validateInput(amount == null || (value != null && value > BigDecimal.ZERO && value.scale() <= 2)) {
+            "Enter an amount greater than 0 with up to two decimals."
+        }
+        renew()
+        api.request("expenses/$expenseId/claims", "POST", json("amount" to value))
+        message = "Sent. They'll confirm once they see the money."
+        selected?.let { claims = JSONArray(api.request("expenses/group/${it.getString("id")}/claims")).objects() }
+        if (ledger != null) ledger = api.objectAt("ledger")
+    }
+
+    /** The payer checks whether the money arrived: confirm records the payment, otherwise the person is told it hasn't. */
+    internal fun resolveClaim(claimId: String, confirm: Boolean) = work {
+        renew()
+        api.request("expenses/claims/$claimId/${if (confirm) "confirm" else "reject"}", "POST")
+        message = if (confirm) "Payment recorded" else "They've been told it hasn't arrived"
+        selected?.let {
+            loadGroup(it, onlyIfSelected = true)
+            claims = JSONArray(api.request("expenses/group/${it.getString("id")}/claims")).objects()
+        }
+    }
+
+    /** Confirms (or rejects) several claims at once, e.g. everything one person says they paid. */
+    internal fun resolveClaims(claimIds: List<String>, confirm: Boolean) = work {
+        renew()
+        for (id in claimIds) {
+            api.request("expenses/claims/$id/${if (confirm) "confirm" else "reject"}", "POST")
+        }
+        message = if (confirm) "Payments recorded" else "They've been told it hasn't arrived"
+        selected?.let {
+            loadGroup(it, onlyIfSelected = true)
+            claims = JSONArray(api.request("expenses/group/${it.getString("id")}/claims")).objects()
+        }
+        if (ledger != null) ledger = api.objectAt("ledger")
+    }
+
+    /** Settle-up progress per group and overall; null until loaded (or when offline). */
+    var progress by mutableStateOf<JSONObject?>(null)
+
+    /** Refreshes [progress] quietly: failures just leave the previous numbers in place. */
+    fun refreshProgress() {
+        if (userId.isEmpty()) return
+        viewModelScope.launch {
+            operation.withLock {
+                try {
+                    renew()
+                    progress = api.objectAt("groups/progress")
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                }
+            }
+        }
+    }
+
     fun refreshFriends() {
         val requestedUserId = userId
         if (requestedUserId.isEmpty() || friendsLoading) return
@@ -680,7 +822,23 @@ class SplitEaseViewModel(application: Application) : AndroidViewModel(applicatio
             if (group.getString("createdBy") == userId) api.all("groups/$id/invitations")
             else emptyList()
         val updatedGroup = api.objectAt("groups/$id")
+        // "I've paid" claims, settle-up progress and the ledger change when people pay, so pull-to-refresh updates them too.
+        // They are extras: if one can't be loaded, the group itself still refreshes.
+        val newClaims = try {
+            JSONArray(api.request("expenses/group/$id/claims")).objects()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        }
+        val newProgress = try { api.objectAt("groups/progress") } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { null }
+        val newLedger = if (ledger != null) {
+            try { api.objectAt("ledger") } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { null }
+        } else null
         if (onlyIfSelected && selected?.optString("id") != id) return
+        newClaims?.let { claims = it }
+        newProgress?.let { progress = it }
+        newLedger?.let { ledger = it }
 
         remoteExpenses = newExpenses
         balances = newBalances
@@ -770,6 +928,47 @@ class SplitEaseViewModel(application: Application) : AndroidViewModel(applicatio
         )
         loadGroup(group)
         message = "Invitation created"
+        done()
+    }
+
+    /**
+     * Adds a phone contact to the open group right away so they can be in a split before they join.
+     * [done] gets their member id.
+     */
+    internal fun addContactMember(name: String, email: String?, phone: String?, done: (String) -> Unit) = work {
+        val group = selected ?: return@work
+        renew()
+        val member = JSONObject(
+            api.request(
+                "groups/${group.getString("id")}/contacts",
+                "POST",
+                json("name" to name, "email" to email, "phone" to phone),
+            )
+        )
+        loadGroup(group)
+        done(member.getString("userId"))
+    }
+
+    /** Invites several people by email in one go; keeps going if one fails and says how many were sent. */
+    internal fun inviteMany(emails: List<String>, done: () -> Unit) = work {
+        val group = selected ?: return@work
+        renew()
+        var sent = 0
+        for (address in emails.map { it.trim().lowercase(Locale.ROOT) }.distinct()) {
+            try {
+                api.request("groups/${group.getString("id")}/invitations", "POST", json("email" to address))
+                sent++
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+            }
+        }
+        loadGroup(group)
+        message = when {
+            sent == emails.size -> if (sent == 1) "Invitation sent" else "$sent invitations sent"
+            sent == 0 -> "Couldn't send the invitations. Try again."
+            else -> "$sent of ${emails.size} invitations sent"
+        }
         done()
     }
 
@@ -879,6 +1078,10 @@ class SplitEaseViewModel(application: Application) : AndroidViewModel(applicatio
         draftKey: String,
         onShareTotalMismatch: (String) -> Unit,
         done: () -> Unit,
+        remindAfterDays: Int? = null,
+        payByDate: String? = null,
+        templateName: String? = null,
+        dueDates: Map<String, String> = emptyMap(),
     ) = work {
         val group = selected ?: return@work
         val total = amount.toBigDecimalOrNull()
@@ -896,7 +1099,7 @@ class SplitEaseViewModel(application: Application) : AndroidViewModel(applicatio
             "Category or notes are too long."
         }
         validateInput(runCatching { LocalDate.parse(date) }.isSuccess) {
-            "Enter a valid date in YYYY-MM-DD format."
+            "Choose a valid date."
         }
         validateInput(participantIds.isNotEmpty()) { "Choose at least one person to split with." }
         val members = group.getJSONArray("members").objects()
@@ -910,9 +1113,13 @@ class SplitEaseViewModel(application: Application) : AndroidViewModel(applicatio
             validateInput(value != null && value >= BigDecimal.ZERO) {
                 "Enter a valid share for every member."
             }
-            shares.put(json("userId" to memberId, "value" to value))
+            shares.put(json("userId" to memberId, "value" to value, "payByDate" to dueDates[memberId]))
         }
-        if (splitType != "EQUAL") {
+        if (splitType == "SHARES") {
+            validateInput(shares.objects().any { it.getString("value").toBigDecimal().signum() > 0 }) {
+                "Give at least one person a share."
+            }
+        } else if (splitType != "EQUAL") {
             val sum =
                 shares.objects().fold(BigDecimal.ZERO) { acc, item ->
                     acc + item.getString("value").toBigDecimal()
@@ -939,6 +1146,8 @@ class SplitEaseViewModel(application: Application) : AndroidViewModel(applicatio
                 "shares" to shares,
                 "category" to categoryName,
                 "notes" to notes.trim(),
+                "remindAfterDays" to remindAfterDays,
+                "payByDate" to payByDate,
                 "receipt" to original?.optJSONObject("receipt"),
                 "attachments" to JSONArray(attachments.map { it.toJson() }),
                 "attachmentIds" to JSONArray(attachments.map { it.id }),
@@ -946,6 +1155,30 @@ class SplitEaseViewModel(application: Application) : AndroidViewModel(applicatio
         val saved = account ?: throw ApiException(401)
         val removed = ExpenseAttachment.fromExpense(offline.cached(saved.accountKey, draftKey)) -
             attachments.toSet()
+        if (!templateName.isNullOrBlank()) {
+            // Best effort: a failed template save never blocks saving the expense itself.
+            try {
+                renew()
+                api.request(
+                    "expense-templates",
+                    "POST",
+                    json(
+                        "groupId" to group.getString("id"),
+                        "name" to templateName.trim(),
+                        "description" to description.trim(),
+                        "amount" to total,
+                        "currency" to currencyCode,
+                        "splitType" to splitType,
+                        "shares" to shares,
+                        "category" to categoryName,
+                        "notes" to notes.trim(),
+                        "remindAfterDays" to remindAfterDays,
+                    ),
+                )
+            } catch (failure: IOException) {
+                if (failure is ReconnectionRequiredException) throw failure
+            }
+        }
         if (original == null) {
             val expense = offline.queue(saved.accountKey, payload, draftKey)
             localMaintenance("clear removed draft attachments") { attachmentFiles().discard(removed) }
@@ -985,6 +1218,58 @@ class SplitEaseViewModel(application: Application) : AndroidViewModel(applicatio
             done()
             loadGroup(group, onlyIfSelected = true)
         }
+    }
+
+    /** Saved expense templates for the open group (newest first); empty when offline. */
+    internal suspend fun expenseTemplates(): List<JSONObject> {
+        val group = selected ?: return emptyList()
+        return try {
+            renew()
+            org.json.JSONArray(api.request("expense-templates/group/${group.getString("id")}")).objects()
+        } catch (failure: IOException) {
+            emptyList()
+        }
+    }
+
+    /**
+     * The payer marks that [personId] paid them back: all of what is left when [amount] is null,
+     * otherwise just [amount]. [done] receives the updated expense.
+     */
+    internal fun recordSharePayment(
+        expense: JSONObject,
+        personId: String,
+        amount: String?,
+        done: (JSONObject) -> Unit,
+    ) = work {
+        val value = amount?.toBigDecimalOrNull()
+        validateInput(amount == null || (value != null && value > BigDecimal.ZERO && value.scale() <= 2)) {
+            "Enter an amount greater than 0 with up to two decimals."
+        }
+        renew()
+        val updated = JSONObject(
+            api.request(
+                "expenses/${expense.getString("id")}/payments",
+                "POST",
+                json("userId" to personId, "amount" to value),
+            )
+        )
+        message = if (amount == null) "Marked as settled" else "Payment recorded"
+        done(updated)
+        selected?.let { loadGroup(it, onlyIfSelected = true) }
+    }
+
+    /** The payer nudges [personId] about an unpaid share, in the app and/or by email. */
+    internal fun nudgeUnpaid(expense: JSONObject, personId: String?, push: Boolean, email: Boolean) = work {
+        renew()
+        api.request(
+            "expenses/${expense.getString("id")}/notify",
+            "POST",
+            json(
+                "userIds" to personId?.let { JSONArray(listOf(it)) },
+                "channels" to JSONArray(listOfNotNull(if (push) "PUSH" else null, if (email) "EMAIL" else null)),
+            ),
+        )
+        message = if (email && !push) "Email queued" else "Reminder sent"
     }
 
     fun retryExpense(operationId: String) = work {
@@ -1119,6 +1404,63 @@ class SplitEaseViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }
         message = "Display name updated."
+    }
+
+    fun saveUpiId(input: String) = work {
+        val value = input.trim().lowercase(Locale.ROOT)
+        val check = com.lambrk.splitease.ui.util.checkUpiId(value)
+        validateInput(value.isEmpty() || check.valid) { check.reason ?: "Enter a UPI ID like name@bank." }
+        renew()
+        val updated = JSONObject(
+            api.request("users/me/upi", "PUT", json("upiId" to value.ifEmpty { null }))
+        )
+        user = updated
+        account?.let { saved ->
+            localMaintenance("save updated profile") {
+                offline.dao.saveAccount(saved.copy(userJson = updated.toString()))
+            }
+        }
+        message = if (value.isEmpty()) "UPI ID removed." else "UPI ID saved."
+    }
+
+    /** The owner saw their own name in a UPI app for this UPI ID, so it is marked verified. */
+    fun confirmUpiId() = work {
+        renew()
+        val updated = JSONObject(api.request("users/me/upi/confirm", "POST"))
+        user = updated
+        account?.let { saved ->
+            localMaintenance("save updated profile") {
+                offline.dao.saveAccount(saved.copy(userJson = updated.toString()))
+            }
+        }
+        message = "UPI ID verified."
+    }
+
+    private var cachedWebBase: String? = null
+
+    /** The public website address, for links that also work for people without the app. */
+    internal suspend fun webBase(): String {
+        cachedWebBase?.let { return it }
+        return try {
+            JSONObject(api.request("app/links")).optString("webUrl").trimEnd('/').takeIf { it.isNotBlank() }
+                ?.also { cachedWebBase = it }
+                ?: ApiClient.serverBase()
+        } catch (_: Exception) {
+            ApiClient.serverBase()
+        }
+    }
+
+    /** A short link like https://site/p/aB3dE5gH7k for a split; falls back to a long link when offline. */
+    internal suspend fun shortPayLink(payload: JSONObject): String {
+        return try {
+            renew()
+            val created = JSONObject(api.request("pay-links", "POST", payload))
+            created.optString("url").takeIf { it.isNotBlank() } ?: com.lambrk.splitease.ui.util.payLink(webBase(), payload)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            com.lambrk.splitease.ui.util.payLink(webBase(), payload)
+        }
     }
 
     fun toggleInbox(enabled: Boolean) = work {

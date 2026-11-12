@@ -1,5 +1,6 @@
 package com.lambrk.splitease.ui.screens.groups
 
+import com.lambrk.splitease.ui.util.friendlyDate
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -166,7 +167,7 @@ internal fun LazyListScope.GroupBalancesContent(
             Panel {
                 MoneyRow(
                     title = "${subject(model, payer)} paid ${objectOf(model, payee)}",
-                    detail = settlement.getString("createdAt").take(10),
+                    detail = friendlyDate(settlement.getString("createdAt")),
                     amount = money(settlement.getString("amount"), settlement.getString("currency")),
                     amountColor = MaterialTheme.colorScheme.onSurface,
                 ) {

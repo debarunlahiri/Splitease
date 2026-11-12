@@ -2,6 +2,7 @@
 
 package com.lambrk.splitease.ui.screens.profile
 
+import com.lambrk.splitease.ui.util.friendlyDate
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -80,7 +81,7 @@ internal fun PlanScreen(model: SplitEaseViewModel, onBack: () -> Unit) {
                             ?.optString("name") ?: planName(activeCode.orEmpty())
                         Text(name, style = MaterialTheme.typography.titleLarge)
                         Text(if (entitlement.optBoolean("adsEnabled", true)) "Includes ads" else "No ads")
-                        val expiry = entitlement.optionalText("expiresAt").take(10)
+                        val expiry = friendlyDate(entitlement.optionalText("expiresAt"))
                         if (expiry.isNotBlank()) Text("Valid until $expiry")
                     }
                 }

@@ -5,6 +5,7 @@ import androidx.compose.runtime.Composable
 import com.lambrk.splitease.ui.SplitEaseViewModel
 import com.lambrk.splitease.ui.screens.activity.ActivityScreen
 import com.lambrk.splitease.ui.screens.friends.FriendsScreen
+import com.lambrk.splitease.ui.screens.ledger.LedgerScreen
 import com.lambrk.splitease.ui.screens.groups.GroupDetailScreen
 import com.lambrk.splitease.ui.screens.groups.GroupsScreen
 import com.lambrk.splitease.ui.screens.profile.ProfileScreen
@@ -29,6 +30,7 @@ internal fun SplitEaseNavigation(
         when (screen) {
             AppDestination.Groups -> GroupsScreen(model)
             AppDestination.Friends -> FriendsScreen(model)
+            AppDestination.Ledger -> LedgerScreen(model)
             AppDestination.Activity -> ActivityScreen(model)
             AppDestination.Profile -> ProfileScreen(
                 model,

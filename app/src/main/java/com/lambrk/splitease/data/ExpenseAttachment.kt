@@ -1,7 +1,12 @@
 package com.lambrk.splitease.data
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
 import android.net.Uri
+import android.os.Build
 import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
 import java.io.File
@@ -47,18 +52,74 @@ internal class AttachmentFiles(private val context: Context, accountKey: String)
             it.length <= 120 && it != "application/octet-stream" && it.matches(MIME_TYPE)
         }
             ?: guessed ?: "application/octet-stream"
-        val attachment = ExpenseAttachment(UUID.randomUUID().toString(), name, mime)
+        val id = UUID.randomUUID().toString()
+        val convert = mime in CONVERTIBLE_IMAGES
+        // Photos are re-encoded as JPEG, PNG or WebP (matching what they came in as).
+        val target = if (convert) imageTarget(mime) else null
+        val attachment = ExpenseAttachment(
+            id,
+            if (target != null) safeName(name.substringBeforeLast('.', name) + "." + target.extension) else name,
+            target?.mime ?: mime,
+        )
         val file = fileIn(drafts, attachment)
         try {
             file.parentFile?.mkdirs()
-            val input = resolver.openInputStream(uri) ?: throw IOException("File is unavailable")
-            input.use { source -> file.outputStream().use { copyAttachment(source, it) } }
+            if (target != null) {
+                convertImage(uri, file, target)
+            } else {
+                val input = resolver.openInputStream(uri) ?: throw IOException("File is unavailable")
+                input.use { source -> file.outputStream().use { copyAttachment(source, it) } }
+            }
             attachment
         } catch (failure: Exception) {
             file.delete()
             file.parentFile?.delete()
             throw failure
         }
+    }
+
+    private class ImageTarget(val mime: String, val extension: String, val format: Bitmap.CompressFormat)
+
+    @Suppress("DEPRECATION")
+    private fun imageTarget(mime: String) = when (mime) {
+        "image/png" -> ImageTarget("image/png", "png", Bitmap.CompressFormat.PNG)
+        "image/webp" -> ImageTarget(
+            "image/webp",
+            "webp",
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) Bitmap.CompressFormat.WEBP_LOSSY
+            else Bitmap.CompressFormat.WEBP,
+        )
+        else -> ImageTarget("image/jpeg", "jpg", Bitmap.CompressFormat.JPEG)
+    }
+
+    /** Decodes (downscaled to at most [MAX_IMAGE_EDGE] px) and re-encodes the image into [file]. */
+    private fun convertImage(uri: Uri, file: File, target: ImageTarget) {
+        val resolver = context.contentResolver
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        (resolver.openInputStream(uri) ?: throw IOException("File is unavailable")).use {
+            BitmapFactory.decodeStream(it, null, bounds)
+        }
+        var sample = 1
+        while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= MAX_IMAGE_EDGE) sample *= 2
+        val options = BitmapFactory.Options().apply { inSampleSize = sample }
+        val bitmap = (resolver.openInputStream(uri) ?: throw IOException("File is unavailable")).use {
+            BitmapFactory.decodeStream(it, null, options)
+        } ?: throw IOException("Image can't be read")
+        try {
+            // JPEG has no transparency: flatten onto white.
+            val source = if (target.format == Bitmap.CompressFormat.JPEG && bitmap.hasAlpha()) {
+                Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888).also {
+                    Canvas(it).apply { drawColor(Color.WHITE); drawBitmap(bitmap, 0f, 0f, null) }
+                }
+            } else bitmap
+            file.outputStream().use { out ->
+                if (!source.compress(target.format, IMAGE_QUALITY, out)) throw IOException("Image can't be saved")
+            }
+            if (source !== bitmap) source.recycle()
+        } finally {
+            bitmap.recycle()
+        }
+        if (file.length() > MAX_ATTACHMENT_BYTES) throw IOException("Attachment exceeds 10 MB")
     }
 
     suspend fun upload(api: ApiClient, groupId: String, attachments: List<ExpenseAttachment>) {
@@ -99,6 +160,11 @@ internal class AttachmentFiles(private val context: Context, accountKey: String)
         File(File(root, UUID.fromString(attachment.id).toString()), safeName(attachment.name))
 
     companion object {
+        private const val MAX_IMAGE_EDGE = 2048
+        private const val IMAGE_QUALITY = 85
+        private val CONVERTIBLE_IMAGES = setOf(
+            "image/jpeg", "image/jpg", "image/png", "image/webp", "image/heic", "image/heif", "image/bmp",
+        )
         private val MIME_TYPE = Regex("[a-z0-9_.+-]+/[a-z0-9_.+-]+")
         private val UNSAFE_NAME = Regex("[\\p{Cntrl}/\\\\]")
 

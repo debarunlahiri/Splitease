@@ -1,13 +1,18 @@
 package com.lambrk.splitease.ui.forms
 
+import com.lambrk.splitease.ui.util.friendlyDate
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AttachFile
@@ -22,6 +27,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -41,16 +48,22 @@ import com.lambrk.splitease.data.MAX_EXPENSE_ATTACHMENTS
 import com.lambrk.splitease.data.json
 import com.lambrk.splitease.data.objects
 import com.lambrk.splitease.ui.SplitEaseViewModel
+import com.lambrk.splitease.ui.components.AttachmentCard
 import com.lambrk.splitease.ui.components.CategoryField
 import com.lambrk.splitease.ui.components.CurrencyDropdown
 import com.lambrk.splitease.ui.components.DateField
 import com.lambrk.splitease.ui.components.ExpenseAttachmentViewer
+import com.lambrk.splitease.ui.components.ExpenseHistory
 import com.lambrk.splitease.ui.components.Field
-import com.lambrk.splitease.ui.components.FormSheet
+import com.lambrk.splitease.ui.components.FormScreen
+import com.lambrk.splitease.ui.components.FormStep
 import com.lambrk.splitease.ui.components.ProfileAvatar
+import com.lambrk.splitease.ui.components.UpiQrDialog
 import com.lambrk.splitease.ui.components.openAttachmentInAndroid
 import com.lambrk.splitease.ui.util.currencySymbol
 import com.lambrk.splitease.ui.util.memberName
+import com.lambrk.splitease.ui.util.money
+import com.lambrk.splitease.ui.util.splitAmounts
 import com.lambrk.splitease.ui.util.memberPhotoUrl
 import com.lambrk.splitease.ui.util.optionalText
 import java.util.UUID
@@ -120,7 +133,7 @@ private fun ExpenseEditorContent(
     var split by remember {
         mutableStateOf(
             if (draft != null) draft.getString("splitType")
-            else if (original?.optString("splitType") == "PERCENTAGE") "EXACT"
+            else if (original?.optString("splitType") in setOf("PERCENTAGE", "SHARES")) "EXACT"
             else original?.optString("splitType") ?: "EQUAL"
         )
     }
@@ -144,6 +157,32 @@ private fun ExpenseEditorContent(
                 ?: members.map { it.getString("userId") }.toSet()
         )
     }
+    var remindAfterDays by remember {
+        mutableStateOf(initial?.takeIf { it.has("remindAfterDays") && !it.isNull("remindAfterDays") }?.optInt("remindAfterDays"))
+    }
+    var payByDate by remember {
+        mutableStateOf(initial?.optionalText("payByDate")?.takeIf { it.isNotBlank() }?.take(10))
+    }
+    var personDue by remember {
+        mutableStateOf(
+            (draft?.optJSONObject("personDue")?.let { o -> o.keys().asSequence().associateWith { o.getString(it) } }
+                ?: original?.optJSONArray("shares")?.objects().orEmpty()
+                    .filter { it.has("payByDate") && !it.isNull("payByDate") }
+                    .associate { it.getString("userId") to it.getString("payByDate").take(10) })
+        )
+    }
+    var saveTemplate by remember { mutableStateOf(false) }
+    var templateName by remember { mutableStateOf("") }
+    var templates by remember { mutableStateOf(emptyList<JSONObject>()) }
+    LaunchedEffect(Unit) { if (original == null) templates = model.expenseTemplates() }
+    var statuses by remember {
+        mutableStateOf(original?.optJSONArray("shares")?.objects().orEmpty().associateBy { it.getString("userId") })
+    }
+    var payTarget by remember { mutableStateOf<String?>(null) }
+    var live by remember { mutableStateOf(false) }
+    var historyFile by remember { mutableStateOf<ExpenseAttachment?>(null) }
+    var showQr by remember { mutableStateOf(false) }
+    var shareLink by remember { mutableStateOf<String?>(null) }
     val categorySuggestions = remember { model.categorySuggestions() }
     var confirmDelete by remember { mutableStateOf(false) }
     var shareTotalError by remember { mutableStateOf<String?>(null) }
@@ -213,6 +252,9 @@ private fun ExpenseEditorContent(
         "currency" to currency,
         "category" to category,
         "notes" to notes,
+        "remindAfterDays" to remindAfterDays,
+        "payByDate" to payByDate,
+        "personDue" to JSONObject(personDue.toSortedMap()),
         "splitType" to split,
         "expenseDate" to date,
         "participants" to JSONArray(participants.sorted()),
@@ -224,80 +266,243 @@ private fun ExpenseEditorContent(
     // The signed-in user is marked so they can find themselves in the list.
     fun personLabel(id: String) =
         memberName(id, model) + if (id == model.userId) " (Me)" else ""
-    FormSheet(
+    val ordered = members.map { it.getString("userId") }.filter { it in participants }
+    val shareAmounts = splitAmounts(amount, split, ordered, shares)
+    val payerId = original?.optString("paidBy") ?: model.userId
+    fun applyTemplate(t: JSONObject) {
+        description = t.optString("description")
+        t.opt("amount")?.takeIf { it != JSONObject.NULL }?.let { amount = it.toString() }
+        currency = t.optString("currency").ifBlank { currency }
+        category = t.optionalText("category")
+        notes = t.optionalText("notes")
+        split = t.optString("splitType", "EQUAL")
+        remindAfterDays = if (t.isNull("remindAfterDays")) null else t.optInt("remindAfterDays")
+        val saved = t.optJSONArray("shares")?.objects().orEmpty()
+        val valid = saved.map { it.getString("userId") }.filter { id -> members.any { it.getString("userId") == id } }
+        if (valid.isNotEmpty()) participants = valid.toSet()
+        shares = saved.filter { it.getString("userId") in valid }
+            .associate { it.getString("userId") to (it.opt("value")?.takeIf { v -> v != JSONObject.NULL }?.toString().orEmpty()) }
+    }
+    LaunchedEffect(live) {
+        if (!live) return@LaunchedEffect
+        val names = ordered.associate { id -> memberName(id, model).substringBefore(" (") to id }
+        // The expense syncs in the background; wait briefly for its server id so friends can tell you they paid.
+        var synced: JSONObject? = null
+        repeat(20) {
+            synced = model.expenses.firstOrNull {
+                !it.optString("id").startsWith("local:") && it.optString("paidBy") == payerId &&
+                    it.optString("description") == description.trim() &&
+                    it.optString("amount").toBigDecimalOrNull()?.compareTo(amount.toBigDecimalOrNull() ?: java.math.BigDecimal(-1)) == 0 &&
+                    java.time.OffsetDateTime.parse(it.optString("createdAt", "1970-01-01T00:00:00Z")).isAfter(java.time.OffsetDateTime.now().minusMinutes(10))
+            }
+            if (synced != null) return@repeat
+            kotlinx.coroutines.delay(750)
+        }
+        val expenseId = synced?.optString("id")
+        shareLink = model.shortPayLink(
+            com.lambrk.splitease.ui.util.payPayload(
+                description.trim(),
+                currency,
+                memberName(payerId, model).substringBefore(" ("),
+                model.user?.optionalText("upiId"),
+                ordered.filter { it != payerId }.map { id ->
+                    memberName(id, model).substringBefore(" (") to (shareAmounts[id]?.setScale(2)?.toPlainString() ?: "0")
+                },
+                payByDate,
+                ordered.associate { id -> memberName(id, model).substringBefore(" (") to (personDue[id] ?: payByDate) },
+                groupId = if (expenseId != null) model.selected?.optString("id") else null,
+                expenseId = expenseId,
+                userIds = if (expenseId != null) names else emptyMap(),
+            )
+        )
+    }
+    if (live) {
+        SplitLiveScreen(
+            summary = "${description.trim()} · ${money(amount, currency)}\n" +
+                ordered.joinToString("\n") { id -> "${memberName(id, model)}: ${shareAmounts[id]?.let { money(it.toPlainString(), currency) } ?: "—"}" } +
+                "\nPaid by ${memberName(payerId, model)}" + (payByDate?.let { "\nPay by ${friendlyDate(it)}" } ?: "") +
+                (shareLink?.let { "\nPay / details: $it" } ?: ""),
+            people = ordered.filter { it != model.userId }.map { id ->
+                memberName(id, model) to (shareAmounts[id]?.let { money(it.toPlainString(), currency) } ?: "—")
+            },
+            personalMessage = { name, owed ->
+                "Hi $name, I added \"${description.trim()}\" on SplitEase. Your share is $owed." +
+                    (payByDate?.let { " Please pay by ${friendlyDate(it)}." } ?: "")
+            },
+            onShowQr = if (currency == "INR" && !model.user?.optionalText("upiId").isNullOrBlank() && ordered.any { it != payerId }) { { showQr = true } } else null,
+            onDone = dismiss,
+        )
+    } else FormScreen(
         title = when {
             viewOnly -> "Draft details"
-            original == null -> "What did you share?"
+            original == null -> "New expense"
             else -> "Expense details"
         },
         model = model,
         dismiss = dismiss,
+        submitLabel = if (original == null) "Create split" else "Save expense",
+        submitEnabled = !staging && !openingDocument && description.isNotBlank() && amount.isNotBlank(),
+        onSubmit = if (!editable) null else {
+            {
+                highlightShares = false
+                model.saveExpense(
+                    description,
+                    amount,
+                    currency,
+                    category,
+                    notes,
+                    split,
+                    date,
+                    participants,
+                    shares,
+                    attachments,
+                    original,
+                    draftKey,
+                    onShareTotalMismatch = {
+                        highlightShares = true
+                        shareTotalError = it
+                    },
+                    done = { if (original == null) live = true else dismiss() },
+                    remindAfterDays = remindAfterDays,
+                    payByDate = payByDate,
+                    dueDates = personDue.filterKeys { it in participants },
+                    templateName = if (saveTemplate) templateName.ifBlank { description }.trim() else null,
+                )
+            }
+        },
         confirmDismiss = {
             val blocked = staging || openingDocument
             val changed = editable && snapshot().toString() != initialSnapshot
             if (!blocked && changed) confirmDraft = true
             !blocked && !changed
         },
-    ) {
+        steps = listOf(
+            FormStep("What did you share?", "${group.getString("name")} · ${group.getString("defaultCurrency")}", valid = description.isNotBlank() && amount.isNotBlank()) {
+                if (editable && original == null) TemplateChips(templates, ::applyTemplate)
         if (draft != null) {
             Text("Draft · Not submitted", color = MaterialTheme.colorScheme.primary)
         }
-        Text(
-            "${group.getString("name")} · ${group.getString("defaultCurrency")}",
-            color = MaterialTheme.colorScheme.primary,
-        )
         Field(description, { description = it }, "Description", enabled = editable)
-        CurrencyDropdown(
-            value = currency,
-            onValueChange = { currency = it },
-            enabled = editable && !model.busy,
-        )
-        Field(
-            amount,
-            { amount = it },
-            "Amount",
-            decimal = true,
-            enabled = editable,
-            prefixText = currencySymbol(currency),
-        )
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Box(Modifier.weight(1.2f)) {
+                CurrencyDropdown(
+                    value = currency,
+                    onValueChange = { currency = it },
+                    enabled = editable && !model.busy,
+                )
+            }
+            Box(Modifier.weight(1f)) {
+                Field(
+                    amount,
+                    { amount = it },
+                    "Amount",
+                    decimal = true,
+                    enabled = editable,
+                    prefixText = currencySymbol(currency),
+                    groupingCurrency = currency,
+                )
+            }
+        }
+        DateField(date, { date = it }, "Date", enabled = editable)
         CategoryField(category, { category = it }, categorySuggestions, enabled = editable)
-        Field(notes, { notes = it }, "Notes (optional)", enabled = editable)
+            },
+            FormStep("Who's in?", "Search your group or pick from your contacts.", valid = participants.isNotEmpty()) {
+                WhoIsInStep(model, members, participants, { participants = it }, editable, ::personLabel)
+            },
+            FormStep(
+                "Split it",
+                valid = splitIsComplete(split, amount, ordered, shares),
+            ) {
+                if (original?.optString("splitType") in setOf("PERCENTAGE", "SHARES"))
+                    Text(
+                        "Existing percent and share splits are shown as their final amounts. Choose % or Shares to enter new values.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                SplitItStep(
+                    model = model,
+                    total = amount,
+                    currency = currency,
+                    split = split,
+                    onSplit = { type ->
+                        if (split != type) highlightShares = false
+                        split = type
+                        if (type == "SHARES") shares = shares + ordered.filter { shares[it].isNullOrBlank() }.associateWith { "1" }
+                    },
+                    people = ordered,
+                    shares = shares,
+                    onShare = { id, value -> shares = shares + (id to value) },
+                    amounts = shareAmounts,
+                    enabled = editable,
+                    highlight = highlightShares,
+                    personLabel = ::personLabel,
+                    payerLabel = memberName(payerId, model),
+                    paymentStatus = { id ->
+                        val st = statuses[id]
+                        if (original == null || !editable || pending || id == payerId || st == null || !st.has("status")) null
+                        else when (st.optString("status")) {
+                            "PAID" -> "Paid" to ""
+                            "PARTIAL" -> "Partly paid" to ""
+                            else -> "Unpaid" to ""
+                        }
+                    },
+                    onPaymentClick = { payTarget = it },
+                )
+            },
+            FormStep("Looks right?", valid = true) {
+                if (editable && original == null && currency == "INR") UpiPrompt(model)
+                if (payerId == model.userId && currency == "INR" && !model.user?.optionalText("upiId").isNullOrBlank() && ordered.any { it != payerId } && splitIsComplete(split, amount, ordered, shares)) {
+                    OutlinedButton(onClick = { showQr = true }, modifier = Modifier.fillMaxWidth()) { Text("Show QR to collect") }
+                }
+                ReviewStep(
+                    description = description,
+                    total = amount,
+                    currency = currency,
+                    people = ordered,
+                    amounts = shareAmounts,
+                    personLabel = ::personLabel,
+                    photo = { memberPhotoUrl(it, model) },
+                    notes = notes,
+                    onNotes = { notes = it },
+                    remindAfterDays = remindAfterDays,
+                    onRemind = { remindAfterDays = it },
+                    payByDate = payByDate,
+                    onPayBy = { payByDate = it },
+                    saveTemplate = saveTemplate,
+                    onSaveTemplate = { saveTemplate = it },
+                    templateName = templateName,
+                    onTemplateName = { templateName = it },
+                    enabled = editable,
+                    showTemplate = editable && original == null,
+                    dueFor = ordered.filter { it != payerId },
+                    personDue = personDue,
+                    onPersonDue = { id, date -> personDue = if (date == null) personDue - id else personDue + (id to date) },
+                )
         Text(
             "Attachments · ${attachments.size} of $MAX_EXPENSE_ATTACHMENTS",
             style = MaterialTheme.typography.titleMedium,
         )
-        attachments.forEachIndexed { index, attachment ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(
-                    modifier = Modifier.weight(1f),
-                    enabled = !openingDocument && !staging && !model.busy,
-                    onClick = {
-                        if (attachment.isImage) galleryPage = index else openDocument(attachment)
-                    },
-                ) {
-                    Icon(
-                        if (attachment.isImage) Icons.Rounded.Image else Icons.Rounded.Description,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                    )
-                    Text(
-                        attachment.name,
-                        modifier = Modifier.weight(1f).padding(start = 8.dp),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                if (editable) {
-                    IconButton(
-                        enabled = !staging && !openingDocument && !model.busy,
+        attachments.withIndex().chunked(2).forEach { rowItems ->
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                rowItems.forEach { (index, attachment) ->
+                    AttachmentCard(
+                        attachment = attachment,
+                        load = model::openAttachment,
+                        modifier = Modifier.weight(1f),
+                        enabled = !openingDocument && !staging && !model.busy,
                         onClick = {
-                            attachments = attachments - attachment
-                            if (attachment !in originalAttachments && attachment !in savedAttachments) {
-                                scope.launch { model.discardAttachments(listOf(attachment)) }
+                            if (attachment.isImage) galleryPage = index else openDocument(attachment)
+                        },
+                        onRemove = if (!editable) null else {
+                            {
+                                attachments = attachments - attachment
+                                if (attachment !in originalAttachments && attachment !in savedAttachments) {
+                                    scope.launch { model.discardAttachments(listOf(attachment)) }
+                                }
                             }
                         },
-                    ) { Icon(Icons.Rounded.Close, "Remove ${attachment.name}") }
+                    )
                 }
+                if (rowItems.size == 1) Spacer(Modifier.weight(1f))
             }
         }
         if (staging || openingDocument) LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -309,131 +514,97 @@ private fun ExpenseEditorContent(
                 Icon(Icons.Rounded.AttachFile, contentDescription = null)
                 Text("Add files")
             }
-            Text("Up to 10 MB per file.", style = MaterialTheme.typography.bodySmall)
+            Text("Up to 10 MB per file. Photos are converted to JPEG, PNG or WebP.", style = MaterialTheme.typography.bodySmall)
         }
-        if (original?.optString("splitType") == "PERCENTAGE")
-            Text(
-                "Existing percentage splits are shown as their final amounts. Choose Percent to enter new percentages.",
-                style = MaterialTheme.typography.bodySmall,
-            )
-        DateField(date, { date = it }, "Date", enabled = editable)
-        Text("Split with", style = MaterialTheme.typography.titleMedium)
-        members.forEach { member ->
-            val id = member.getString("userId")
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Checkbox(
-                    checked = id in participants,
-                    enabled = editable && !model.busy,
-                    onCheckedChange = { checked ->
-                        participants = if (checked) participants + id else participants - id
-                    },
-                )
-                ProfileAvatar(memberPhotoUrl(id, model), size = 32.dp)
-                Text(personLabel(id))
-            }
-        }
-        Text(
-            "Split the expense",
-            modifier = Modifier.bringIntoViewRequester(splitSection),
-            color =
-                if (highlightShares) MaterialTheme.colorScheme.error
-                else MaterialTheme.colorScheme.onSurface,
-            style = MaterialTheme.typography.titleMedium,
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("EQUAL" to "Equal", "EXACT" to "Exact", "PERCENTAGE" to "%").forEach {
-                (type, label) ->
-                FilterChip(
-                    selected = split == type,
-                    onClick = {
-                        if (split != type) highlightShares = false
-                        split = type
-                    },
-                    enabled = editable && !model.busy,
-                    label = { Text(label) },
-                )
-            }
-        }
-        val payer = original?.optString("paidBy") ?: model.userId
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            ProfileAvatar(memberPhotoUrl(payer, model), size = 24.dp)
-            Text("Paid by ${memberName(payer, model)}", style = MaterialTheme.typography.bodySmall)
-        }
-        if (split == "EQUAL") Text("Shared equally between ${participants.size} members.")
-        else
-            members.forEach { member ->
-                val id = member.getString("userId")
-                if (id !in participants) return@forEach
-                Field(
-                    shares[id].orEmpty(),
-                    { value -> shares = shares + (id to value) },
-                    "${personLabel(id)} · ${if (split == "PERCENTAGE") "percent" else group.getString("defaultCurrency")}",
-                    decimal = true,
-                    enabled = editable,
-                    isError = highlightShares,
-                    leadingIcon = { ProfileAvatar(memberPhotoUrl(id, model), size = 24.dp) },
-                )
-            }
         if (original != null && !pending && !viewOnly) {
-            TextButton(enabled = !model.busy, onClick = { model.history(original) }) {
-                Text("View change history")
-            }
-            model.audit.forEach { entry ->
-                Text(
-                    "${entry.getString("action")} · ${entry.getString("occurredAt").take(10)} · revision ${entry.getLong("revision")}",
-                    style = MaterialTheme.typography.bodySmall,
-                )
+            var historyOpen by remember { mutableStateOf(false) }
+            var historyRequested by remember { mutableStateOf(false) }
+            Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Change history", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                        TextButton(
+                            enabled = !model.busy,
+                            onClick = {
+                                historyOpen = !historyOpen
+                                if (historyOpen && !historyRequested) {
+                                    historyRequested = true
+                                    model.history(original)
+                                }
+                            },
+                        ) { Text(if (historyOpen) "Hide" else "Show") }
+                    }
+                    if (historyOpen) {
+                        when {
+                            model.audit.isNotEmpty() -> ExpenseHistory(
+                                model.audit,
+                                load = model::openAttachment,
+                                onOpen = { file -> if (file.isImage) historyFile = file else openDocument(file) },
+                            )
+                            model.busy -> LinearProgressIndicator(Modifier.fillMaxWidth())
+                            else -> Text(
+                                "No history yet.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
             }
         }
-        if (editable) {
-            Button(
-                enabled = !model.busy && !staging && !openingDocument &&
-                    description.isNotBlank() && amount.isNotBlank(),
-                onClick = {
-                    highlightShares = false
-                    model.saveExpense(
-                        description,
-                        amount,
-                        currency,
-                        category,
-                        notes,
-                        split,
-                        date,
-                        participants,
-                        shares,
-                        attachments,
-                        original,
-                        draftKey,
-                        onShareTotalMismatch = {
-                            highlightShares = true
-                            shareTotalError = it
-                        },
-                        done = dismiss,
-                    )
-                },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("Save expense")
-            }
-            if (original != null)
+            if (editable && original != null)
                 TextButton(
                     enabled = !model.busy && !staging && !openingDocument,
                     onClick = { confirmDelete = true },
                 ) {
                     Text("Delete expense", color = MaterialTheme.colorScheme.error)
                 }
-        } else if (!viewOnly)
+        if (!editable && !viewOnly)
             Text(
                 if (pending) "Sync this expense before editing."
                 else "Only the person who paid can change this expense.",
                 style = MaterialTheme.typography.bodySmall,
             )
+            },
+        ),
+    )
+    if (showQr) {
+        UpiQrDialog(
+            upiId = model.user?.optionalText("upiId").orEmpty(),
+            payeeName = memberName(payerId, model).substringBefore(" ("),
+            note = description.trim(),
+            entries = ordered.filter { it != payerId }.map { id ->
+                memberName(id, model).substringBefore(" (") to (shareAmounts[id]?.setScale(2)?.toPlainString() ?: "0")
+            },
+            onDismiss = { showQr = false },
+        )
+    }
+    payTarget?.let { id ->
+        val st = statuses[id]
+        if (original != null && st != null) {
+            SharePaymentDialog(
+                name = memberName(id, model),
+                amount = st.optString("amount").toBigDecimalOrNull() ?: java.math.BigDecimal.ZERO,
+                paid = st.optString("paidAmount").toBigDecimalOrNull() ?: java.math.BigDecimal.ZERO,
+                currency = currency,
+                description = description,
+                busy = model.busy,
+                onSettle = {
+                    model.recordSharePayment(original, id, null) { updated ->
+                        statuses = updated.getJSONArray("shares").objects().associateBy { it.getString("userId") }
+                        payTarget = null
+                    }
+                },
+                onPartial = { value ->
+                    model.recordSharePayment(original, id, value) { updated ->
+                        statuses = updated.getJSONArray("shares").objects().associateBy { it.getString("userId") }
+                        payTarget = null
+                    }
+                },
+                onNudge = { push, email -> model.nudgeUnpaid(original, id, push, email) },
+                onDismiss = { payTarget = null },
+            )
+        }
     }
     if (confirmDraft) {
         AlertDialog(
@@ -457,6 +628,15 @@ private fun ExpenseEditorContent(
                     onClick = { confirmDraft = false },
                 ) { Text("Keep editing") }
             },
+        )
+    }
+    historyFile?.let { file ->
+        ExpenseAttachmentViewer(
+            attachments = listOf(file),
+            initialPage = 0,
+            load = model::openAttachment,
+            openDocument = ::openDocument,
+            onDismiss = { historyFile = null },
         )
     }
     galleryPage?.let { page ->

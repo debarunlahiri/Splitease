@@ -6,6 +6,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
@@ -27,10 +29,17 @@ internal fun Field(
     prefixText: String? = null,
     isError: Boolean = false,
     leadingIcon: (@Composable () -> Unit)? = null,
+    // When set, the number is shown with thousands separators for this currency (e.g. 12,34,567 for INR).
+    groupingCurrency: String? = null,
 ) {
     OutlinedTextField(
         value = value,
-        onValueChange = change,
+        onValueChange = {
+            change(if (groupingCurrency != null) sanitizeAmount(it) else it)
+        },
+        visualTransformation =
+            if (groupingCurrency != null) remember(groupingCurrency) { AmountTransformation(groupingCurrency) }
+            else VisualTransformation.None,
         label = { Text(label) },
         leadingIcon = leadingIcon,
         prefix = if (prefixText != null) ({ Text(prefixText) }) else null,
@@ -42,4 +51,17 @@ internal fun Field(
         keyboardOptions =
             KeyboardOptions(capitalization = capitalization, keyboardType = keyboardType),
     )
+}
+
+/** Keeps digits and a single decimal point (accepting a comma as the point). */
+internal fun sanitizeAmount(input: String): String {
+    var dot = false
+    val cleaned = buildString {
+        for (c in input) when {
+            c.isDigit() -> append(c)
+            (c == '.' || c == ',') && !dot -> { dot = true; append('.') }
+        }
+    }
+    // No leading zeros ("007" becomes "7", but "0.5" stays), so what is shown matches what is stored.
+    return cleaned.replace(Regex("^0+(?=\\d)"), "")
 }

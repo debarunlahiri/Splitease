@@ -34,13 +34,23 @@ import com.lambrk.splitease.ui.components.CurrencyBadge
 import com.lambrk.splitease.ui.components.ProfileAvatar
 import com.lambrk.splitease.ui.components.RefreshableList
 import com.lambrk.splitease.ui.components.SectionTitle
+import com.lambrk.splitease.ui.util.money
 import com.lambrk.splitease.ui.util.optionalText
+import com.lambrk.splitease.data.objects
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.runtime.LaunchedEffect
 
 @Composable
 internal fun GroupsScreen(model: SplitEaseViewModel) {
     val colors = MaterialTheme.colorScheme
     val pending = model.invitations.filter { it.optString("status") == "PENDING" }
     val groupCount = model.groups.size
+    val progress = model.progress
+    LaunchedEffect(model.groups.size, model.expenses.size) { model.refreshProgress() }
+    fun totals(array: org.json.JSONArray?) = array?.objects().orEmpty().map { it.getString("currency") to it.getString("amount") }
+    val perGroup = progress?.optJSONArray("groups")?.objects().orEmpty().associateBy { it.getString("groupId") }
+    val overallSettled = perGroup.values.sumOf { it.optInt("settled") }
+    val overallTotal = perGroup.values.sumOf { it.optInt("total") }
 
     RefreshableList(
         isRefreshing = model.refreshing,
@@ -117,6 +127,41 @@ internal fun GroupsScreen(model: SplitEaseViewModel) {
                 }
             }
         }
+        if (progress != null && overallTotal > 0) {
+            item(key = "groups-progress") {
+                val toCollect = totals(progress.optJSONArray("toCollect"))
+                val toPay = totals(progress.optJSONArray("toPay"))
+                Surface(
+                    modifier = Modifier.fillMaxWidth().padding(top = 24.dp),
+                    shape = RoundedCornerShape(22.dp),
+                    color = colors.surfaceContainer,
+                ) {
+                    Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Still to collect", style = MaterialTheme.typography.bodySmall)
+                                if (toCollect.isEmpty()) Text("Nothing", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                                toCollect.forEach { (c, a) -> Text(money(a, c), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
+                            }
+                            Column(Modifier.weight(1f)) {
+                                Text("You still owe", style = MaterialTheme.typography.bodySmall)
+                                if (toPay.isEmpty()) Text("Nothing", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                                toPay.forEach { (c, a) -> Text(money(a, c), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
+                            }
+                        }
+                        LinearProgressIndicator(
+                            progress = { overallSettled.toFloat() / overallTotal },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Text(
+                            "$overallSettled of $overallTotal payments settled",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
         item(key = "groups-list-heading") {
             SectionTitle("Your groups", modifier = Modifier.padding(top = 24.dp, bottom = 8.dp))
         }
@@ -156,7 +201,24 @@ internal fun GroupsScreen(model: SplitEaseViewModel) {
                 headlineContent = {
                     Text(group.getString("name"), fontWeight = FontWeight.SemiBold)
                 },
-                supportingContent = { Text("$members · $currency") },
+                supportingContent = {
+                    val p = perGroup[group.getString("id")]
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("$members · $currency")
+                        if (p != null && p.optInt("total") > 0) {
+                            LinearProgressIndicator(
+                                progress = { p.optInt("settled").toFloat() / p.optInt("total") },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            val left = totals(p.optJSONArray("pending"))
+                            Text(
+                                "${p.optInt("settled")}/${p.optInt("total")} settled" +
+                                    if (left.isEmpty()) " · All paid" else " · ${left.joinToString(" + ") { money(it.second, it.first) }} pending",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
+                },
                 trailingContent = {
                     Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null)
                 },

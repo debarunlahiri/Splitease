@@ -1,5 +1,6 @@
 package com.lambrk.splitease.ui.components
 
+import com.lambrk.splitease.ui.util.friendlyDate
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -41,7 +42,7 @@ internal fun DateField(
     var open by remember { mutableStateOf(false) }
     Box {
         OutlinedTextField(
-            value = value,
+            value = friendlyDate(value),
             onValueChange = {},
             readOnly = true,
             label = { Text(label) },
