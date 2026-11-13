@@ -18,6 +18,8 @@ Debug builds default to `http://192.168.0.135:9890/`. Set `SPLITEASE_API_URL` to
 
 Release builds use `http://api.lambrk.com:9890/api/v1/` and allow cleartext traffic to that host. Chucker is included only in debug builds.
 
+Pay links: the share dialogs (group, expense, individual) call `POST /pay-links` once, when the dialog opens, and show the short `https://.../p/<code>` link. Only if that call fails does the app fall back to the long `/pay#...` link. If you see the long link on a debug build, the debug build is probably pointing at a server that is not running (see above); on any build, close and reopen the dialog after the backend is fixed, because the link is not requested again while the dialog stays open.
+
 4. On the identity service, configure `FIREBASE_PROJECT_ID` and Application Default Credentials (`GOOGLE_APPLICATION_CREDENTIALS` pointing to a server-only service-account file). Use the same Firebase project as Android. Apply identity migration `V3__firebase_identity.sql` through the existing Flyway process. Never put the server credential in the Android application.
 
 Follow [Firebase's Android Google sign-in guide](https://firebase.google.com/docs/auth/android/google-signin) for provider registration. This app uses Credential Manager's explicit Google sign-in option, exchanges its credential with Firebase Authentication, and posts the resulting Firebase ID token to `POST /api/v1/auth/firebase`.
