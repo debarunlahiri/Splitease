@@ -22,8 +22,7 @@ android {
         buildConfigField(
             "String",
             "API_BASE_URL",
-//            "\"${providers.gradleProperty("SPLITEASE_API_URL").getOrElse("http://192.168.0.135:9890/")}\"",
-            "\"${providers.gradleProperty("SPLITEASE_API_URL").getOrElse("http://api.lambrk.com:9890/")}\"",
+            "\"${providers.gradleProperty("SPLITEASE_API_URL").getOrElse("http://192.168.0.135:9890/")}\"",
         )
         buildConfigField(
             "String",
@@ -38,7 +37,7 @@ android {
 
     buildTypes {
         release {
-            buildConfigField("String", "API_BASE_URL", "http://api.lambrk.com:9890/")
+            buildConfigField("String", "API_BASE_URL", "\"http://api.lambrk.com:9890/\"")
             optimization {
                 enable = false
             }
