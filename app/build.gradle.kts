@@ -30,8 +30,8 @@ android {
             "GOOGLE_WEB_CLIENT_ID",
             "\"${providers.gradleProperty("SPLITEASE_GOOGLE_WEB_CLIENT_ID").getOrElse("")}\"",
         )
-        versionCode = 3
-        versionName = "1.1.0"
+        versionCode = 4
+        versionName = "1.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
