@@ -52,7 +52,8 @@ class ApiClient(private val baseUrl: String = ApiClient.serverBase()) {
             .callTimeout(90, TimeUnit.SECONDS)
             .build()
     }
-    @Volatile var accessToken: String? = null
+    @Volatile
+    var accessToken: String? = null
     var onUnauthorized: (suspend () -> Boolean)? = null
     var requestUserId: String = ""
     private val pendingKeys = ConcurrentHashMap<String, String>()
@@ -69,7 +70,11 @@ class ApiClient(private val baseUrl: String = ApiClient.serverBase()) {
         return Request.Builder().url("$base/api/v1/$path")
     }
 
-    internal suspend fun uploadAttachment(groupId: String, attachment: ExpenseAttachment, file: File) {
+    internal suspend fun uploadAttachment(
+        groupId: String,
+        attachment: ExpenseAttachment,
+        file: File
+    ) {
         val path = "expenses/group/$groupId/attachments/${attachment.id}"
         val request = requestBuilder(path)
             .header("X-Attachment-Name", Uri.encode(attachment.name))
@@ -82,7 +87,8 @@ class ApiClient(private val baseUrl: String = ApiClient.serverBase()) {
         val request = requestBuilder("expenses/attachments/$id")
         transferAttachment(request) { response ->
             val body = response.body ?: throw IOException("Attachment response is empty")
-            body.byteStream().use { source -> target.outputStream().use { copyAttachment(source, it) } }
+            body.byteStream()
+                .use { source -> target.outputStream().use { copyAttachment(source, it) } }
         }
     }
 
@@ -147,9 +153,9 @@ class ApiClient(private val baseUrl: String = ApiClient.serverBase()) {
                     requestClient.newCall(request.method(method, payload).build()).execute()
                 if (
                     response.code == 401 &&
-                        attempt == 0 &&
-                        !path.startsWith("auth/") &&
-                        onUnauthorized != null
+                    attempt == 0 &&
+                    !path.startsWith("auth/") &&
+                    onUnauthorized != null
                 ) {
                     response.close()
                     if (onUnauthorized?.invoke() == true) {
@@ -162,9 +168,9 @@ class ApiClient(private val baseUrl: String = ApiClient.serverBase()) {
                     val text = response.body?.string().orEmpty()
                     if (
                         protectedWrite &&
-                            (response.isSuccessful ||
+                        (response.isSuccessful ||
                                 (response.code in 400..499 &&
-                                    response.code !in setOf(401, 408, 409, 429)))
+                                        response.code !in setOf(401, 408, 409, 429)))
                     ) {
                         pendingKeys.remove(signature)
                     }

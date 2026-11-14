@@ -1,5 +1,7 @@
 package com.lambrk.splitease.ui.screens.groups
 
+import com.lambrk.splitease.ui.i18n.tr
+
 import com.lambrk.splitease.ui.util.friendlyDate
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
@@ -18,7 +20,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import com.lambrk.splitease.ui.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,7 +42,7 @@ import org.json.JSONObject
 /**
  * The Balances tab, top to bottom:
  * 1. "Balances": one card listing every member, who is owed money and who owes it.
- * 2. "Settle up": the payments that would clear everything, with a button for your own.
+ * 2. "Pay back": the payments that would clear everything, with a button for your own.
  * 3. "Payment history": payments that were already recorded.
  */
 internal fun LazyListScope.GroupBalancesContent(
@@ -52,8 +54,8 @@ internal fun LazyListScope.GroupBalancesContent(
         item {
             EmptyState(
                 Icons.Rounded.DoneAll,
-                "Balance unavailable",
-                "Connect to load your group's balances.",
+                "Not available right now",
+                "Connect to see who owes what in this Splits.",
             )
         }
         return
@@ -68,10 +70,9 @@ internal fun LazyListScope.GroupBalancesContent(
     }
     val allSettled = amounts.values.all { it.signum() == 0 }
     // Money owed to people first, then money people owe, then those who are settled.
-    fun rank(amount: BigDecimal) = if (amount.signum() > 0) 0 else if (amount.signum() < 0) 1 else 2
     val ordered =
         amounts.entries.sortedWith(
-            compareBy<Map.Entry<String, BigDecimal>> { rank(it.value) }
+            compareBy<Map.Entry<String, BigDecimal>> { balanceRank(it.value) }
                 .thenByDescending { it.value.abs() }
         )
 
@@ -92,7 +93,7 @@ internal fun LazyListScope.GroupBalancesContent(
                     Icon(Icons.Rounded.DoneAll, null, Modifier.size(28.dp))
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
-                            "Everyone is settled up",
+                            tr("Everyone is paid up"),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
                         )
@@ -108,8 +109,8 @@ internal fun LazyListScope.GroupBalancesContent(
 
     item {
         Section(
-            "Balances",
-            "Green means they are owed money. Red means they owe money.",
+            tr("Who owes what"),
+            tr("Green means they get money back. Red means they need to pay."),
         )
     }
     item {
@@ -129,8 +130,8 @@ internal fun LazyListScope.GroupBalancesContent(
     if (model.suggestions.isNotEmpty()) {
         item {
             Section(
-                "Settle up",
-                "These payments would clear every balance with the fewest transfers.",
+                tr("Pay back"),
+                tr("These payments will square everyone up with the fewest payments."),
             )
         }
         items(model.suggestions) { suggestion ->
@@ -152,7 +153,7 @@ internal fun LazyListScope.GroupBalancesContent(
                         onClick = { onPay(suggestion) },
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text("I've paid this")
+                        Text(tr("I've paid this"))
                     }
                 }
             }
@@ -160,7 +161,7 @@ internal fun LazyListScope.GroupBalancesContent(
     }
 
     if (model.settlements.isNotEmpty()) {
-        item { Section("Payment history", "Payments already recorded in this group.") }
+        item { Section(tr("Payment history"), tr("Who has paid whom so far.")) }
         items(model.settlements, key = { it.getString("id") }) { settlement ->
             val payer = settlement.getString("payerId")
             val payee = settlement.getString("payeeId")
@@ -200,7 +201,7 @@ private fun BalanceRow(name: String, photoUrl: String?, amount: BigDecimal, curr
         when {
             amount.signum() > 0 -> "gets back" to MaterialTheme.colorScheme.primary
             amount.signum() < 0 -> "owes" to MaterialTheme.colorScheme.error
-            else -> "settled up" to MaterialTheme.colorScheme.onSurfaceVariant
+            else -> "paid up" to MaterialTheme.colorScheme.onSurfaceVariant
         }
     MoneyRow(
         title = name,
@@ -262,3 +263,6 @@ private fun subject(model: SplitEaseViewModel, id: String) =
 /** "you" for the signed-in user inside a sentence, otherwise the member's name. */
 private fun objectOf(model: SplitEaseViewModel, id: String) =
     if (id == model.userId) "you" else memberName(id, model)
+
+/** Money owed to people first, then money people owe, then those who are settled. */
+private fun balanceRank(amount: BigDecimal) = if (amount.signum() > 0) 0 else if (amount.signum() < 0) 1 else 2

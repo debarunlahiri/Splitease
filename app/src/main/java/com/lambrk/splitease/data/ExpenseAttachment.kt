@@ -30,7 +30,11 @@ internal data class ExpenseAttachment(val id: String, val name: String, val cont
     companion object {
         fun fromExpense(expense: JSONObject?): List<ExpenseAttachment> =
             expense?.optJSONArray("attachments")?.objects().orEmpty().map {
-                ExpenseAttachment(it.getString("id"), it.getString("name"), it.getString("contentType"))
+                ExpenseAttachment(
+                    it.getString("id"),
+                    it.getString("name"),
+                    it.getString("contentType")
+                )
             }
     }
 }
@@ -42,8 +46,9 @@ internal class AttachmentFiles(private val context: Context, accountKey: String)
 
     suspend fun stage(uri: Uri): ExpenseAttachment = withContext(Dispatchers.IO) {
         val resolver = context.contentResolver
-        val displayName = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
-            ?.use { if (it.moveToFirst()) it.getString(0) else null }
+        val displayName =
+            resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                ?.use { if (it.moveToFirst()) it.getString(0) else null }
         val name = safeName(displayName.orEmpty())
         val guessed = MimeTypeMap.getSingleton()
             .getMimeTypeFromExtension(name.substringAfterLast('.', "").lowercase(Locale.ROOT))
@@ -58,7 +63,12 @@ internal class AttachmentFiles(private val context: Context, accountKey: String)
         val target = if (convert) imageTarget(mime) else null
         val attachment = ExpenseAttachment(
             id,
-            if (target != null) safeName(name.substringBeforeLast('.', name) + "." + target.extension) else name,
+            if (target != null) safeName(
+                name.substringBeforeLast(
+                    '.',
+                    name
+                ) + "." + target.extension
+            ) else name,
             target?.mime ?: mime,
         )
         val file = fileIn(drafts, attachment)
@@ -67,7 +77,8 @@ internal class AttachmentFiles(private val context: Context, accountKey: String)
             if (target != null) {
                 convertImage(uri, file, target)
             } else {
-                val input = resolver.openInputStream(uri) ?: throw IOException("File is unavailable")
+                val input =
+                    resolver.openInputStream(uri) ?: throw IOException("File is unavailable")
                 input.use { source -> file.outputStream().use { copyAttachment(source, it) } }
             }
             attachment
@@ -78,7 +89,11 @@ internal class AttachmentFiles(private val context: Context, accountKey: String)
         }
     }
 
-    private class ImageTarget(val mime: String, val extension: String, val format: Bitmap.CompressFormat)
+    private class ImageTarget(
+        val mime: String,
+        val extension: String,
+        val format: Bitmap.CompressFormat
+    )
 
     @Suppress("DEPRECATION")
     private fun imageTarget(mime: String) = when (mime) {
@@ -89,6 +104,7 @@ internal class AttachmentFiles(private val context: Context, accountKey: String)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) Bitmap.CompressFormat.WEBP_LOSSY
             else Bitmap.CompressFormat.WEBP,
         )
+
         else -> ImageTarget("image/jpeg", "jpg", Bitmap.CompressFormat.JPEG)
     }
 
@@ -100,11 +116,16 @@ internal class AttachmentFiles(private val context: Context, accountKey: String)
             BitmapFactory.decodeStream(it, null, bounds)
         }
         var sample = 1
-        while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= MAX_IMAGE_EDGE) sample *= 2
+        while (maxOf(
+                bounds.outWidth,
+                bounds.outHeight
+            ) / (sample * 2) >= MAX_IMAGE_EDGE
+        ) sample *= 2
         val options = BitmapFactory.Options().apply { inSampleSize = sample }
-        val bitmap = (resolver.openInputStream(uri) ?: throw IOException("File is unavailable")).use {
-            BitmapFactory.decodeStream(it, null, options)
-        } ?: throw IOException("Image can't be read")
+        val bitmap =
+            (resolver.openInputStream(uri) ?: throw IOException("File is unavailable")).use {
+                BitmapFactory.decodeStream(it, null, options)
+            } ?: throw IOException("Image can't be read")
         try {
             // JPEG has no transparency: flatten onto white.
             val source = if (target.format == Bitmap.CompressFormat.JPEG && bitmap.hasAlpha()) {
@@ -113,7 +134,12 @@ internal class AttachmentFiles(private val context: Context, accountKey: String)
                 }
             } else bitmap
             file.outputStream().use { out ->
-                if (!source.compress(target.format, IMAGE_QUALITY, out)) throw IOException("Image can't be saved")
+                if (!source.compress(
+                        target.format,
+                        IMAGE_QUALITY,
+                        out
+                    )
+                ) throw IOException("Image can't be saved")
             }
             if (source !== bitmap) source.recycle()
         } finally {
@@ -129,24 +155,26 @@ internal class AttachmentFiles(private val context: Context, accountKey: String)
         }
     }
 
-    suspend fun open(api: ApiClient, attachment: ExpenseAttachment): File = withContext(Dispatchers.IO) {
-        val staged = fileIn(drafts, attachment)
-        val target = fileIn(cache, attachment)
-        if (target.isFile) return@withContext target
-        target.parentFile?.mkdirs()
-        val temp = File.createTempFile("download-", ".part", target.parentFile)
-        try {
-            if (staged.isFile) {
-                staged.inputStream().use { source -> temp.outputStream().use { copyAttachment(source, it) } }
-            } else {
-                api.downloadAttachment(attachment.id, temp)
+    suspend fun open(api: ApiClient, attachment: ExpenseAttachment): File =
+        withContext(Dispatchers.IO) {
+            val staged = fileIn(drafts, attachment)
+            val target = fileIn(cache, attachment)
+            if (target.isFile) return@withContext target
+            target.parentFile?.mkdirs()
+            val temp = File.createTempFile("download-", ".part", target.parentFile)
+            try {
+                if (staged.isFile) {
+                    staged.inputStream()
+                        .use { source -> temp.outputStream().use { copyAttachment(source, it) } }
+                } else {
+                    api.downloadAttachment(attachment.id, temp)
+                }
+                if (!temp.renameTo(target) && !target.isFile) throw IOException("Could not cache attachment")
+                target
+            } finally {
+                temp.delete()
             }
-            if (!temp.renameTo(target) && !target.isFile) throw IOException("Could not cache attachment")
-            target
-        } finally {
-            temp.delete()
         }
-    }
 
     suspend fun discard(attachments: List<ExpenseAttachment>) = withContext(Dispatchers.IO) {
         attachments.forEach {
@@ -163,7 +191,13 @@ internal class AttachmentFiles(private val context: Context, accountKey: String)
         private const val MAX_IMAGE_EDGE = 2048
         private const val IMAGE_QUALITY = 85
         private val CONVERTIBLE_IMAGES = setOf(
-            "image/jpeg", "image/jpg", "image/png", "image/webp", "image/heic", "image/heif", "image/bmp",
+            "image/jpeg",
+            "image/jpg",
+            "image/png",
+            "image/webp",
+            "image/heic",
+            "image/heif",
+            "image/bmp",
         )
         private val MIME_TYPE = Regex("[a-z0-9_.+-]+/[a-z0-9_.+-]+")
         private val UNSAFE_NAME = Regex("[\\p{Cntrl}/\\\\]")

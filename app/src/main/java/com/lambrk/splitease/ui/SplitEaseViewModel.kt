@@ -1,5 +1,7 @@
 package com.lambrk.splitease.ui
 
+import com.lambrk.splitease.ui.i18n.tr
+
 import android.app.Activity
 import android.app.Application
 import android.net.Uri
@@ -85,10 +87,17 @@ class SplitEaseViewModel(application: Application) : AndroidViewModel(applicatio
         private set
 
     init {
+        com.lambrk.splitease.ui.i18n.I18n.init(application)
+        viewModelScope.launch { com.lambrk.splitease.ui.i18n.I18n.refresh(application, api) }
         api.onUnauthorized = {
             recoverSession(forceRefresh = true)
             true
         }
+    }
+
+    /** Switches the app's language (English or any language the backend offers). */
+    fun selectLanguage(code: String) {
+        viewModelScope.launch { com.lambrk.splitease.ui.i18n.I18n.select(getApplication(), api, code) }
     }
 
     private val operation = Mutex()
@@ -204,8 +213,8 @@ class SplitEaseViewModel(application: Application) : AndroidViewModel(applicatio
         }
         if (!pendingInvite.capture(uri)) return
         message =
-            if (user == null) "Sign in to join your friend's group."
-            else "Opening your group invitation…"
+            if (user == null) "Sign in to join your friend's Splits."
+            else "Opening your invitation…"
         if (user != null && !restoringSession) {
             work { renew() }
         }
@@ -309,7 +318,7 @@ class SplitEaseViewModel(application: Application) : AndroidViewModel(applicatio
                 "channels" to JSONArray(listOfNotNull(if (push) "PUSH" else null, if (email) "EMAIL" else null)),
             ),
         )
-        message = if (email && !push) "Email queued" else "Reminder sent"
+        message = if (email && !push) "Email on its way" else "Reminder sent"
     }
 
     /** Open "I've paid" claims in the open group: ones waiting on me as the payer, and ones I made. */
@@ -339,7 +348,7 @@ class SplitEaseViewModel(application: Application) : AndroidViewModel(applicatio
         }
         renew()
         api.request("expenses/$expenseId/claims", "POST", json("amount" to value))
-        message = "Sent. They'll confirm once they see the money."
+        message = tr("Sent. They'll confirm once they see the money.")
         selected?.let { claims = JSONArray(api.request("expenses/group/${it.getString("id")}/claims")).objects() }
         if (ledger != null) ledger = api.objectAt("ledger")
     }
@@ -348,7 +357,7 @@ class SplitEaseViewModel(application: Application) : AndroidViewModel(applicatio
     internal fun resolveClaim(claimId: String, confirm: Boolean) = work {
         renew()
         api.request("expenses/claims/$claimId/${if (confirm) "confirm" else "reject"}", "POST")
-        message = if (confirm) "Payment recorded" else "They've been told it hasn't arrived"
+        message = if (confirm) "Marked as paid" else "We've let them know it hasn't arrived"
         selected?.let {
             loadGroup(it, onlyIfSelected = true)
             claims = JSONArray(api.request("expenses/group/${it.getString("id")}/claims")).objects()
@@ -361,7 +370,7 @@ class SplitEaseViewModel(application: Application) : AndroidViewModel(applicatio
         for (id in claimIds) {
             api.request("expenses/claims/$id/${if (confirm) "confirm" else "reject"}", "POST")
         }
-        message = if (confirm) "Payments recorded" else "They've been told it hasn't arrived"
+        message = if (confirm) "Marked as paid" else "We've let them know it hasn't arrived"
         selected?.let {
             loadGroup(it, onlyIfSelected = true)
             claims = JSONArray(api.request("expenses/group/${it.getString("id")}/claims")).objects()
@@ -428,8 +437,8 @@ class SplitEaseViewModel(application: Application) : AndroidViewModel(applicatio
         val count = result.getInt("invited")
         message = when (count) {
             0 -> "Enter someone else's email address."
-            1 -> "Friend invitation queued."
-            else -> "$count friend invitations queued."
+            1 -> "Friend invitation sent."
+            else -> "$count friend invitations sent."
         }
         if (count > 0) done()
     }
@@ -469,7 +478,7 @@ class SplitEaseViewModel(application: Application) : AndroidViewModel(applicatio
         friendInvitePending = pendingFriendInvite.token() != null
         selected = null
         destination = AppDestination.Friends
-        message = "You're connected on SplitEase."
+        message = tr("You're connected on SplitEase.")
         refreshFriends()
     }
 
@@ -577,7 +586,7 @@ class SplitEaseViewModel(application: Application) : AndroidViewModel(applicatio
                         "SplitEaseSession",
                         "Observe saved expenses failed: ${failure.javaClass.simpleName}",
                     )
-                    message = "Saved expenses are temporarily unavailable. Please reopen the app."
+                    message = tr("Your saved splits are temporarily unavailable. Please reopen the app.")
                 }
                 .collect { expenses ->
                     val previouslySynced = localExpenses
@@ -773,7 +782,7 @@ class SplitEaseViewModel(application: Application) : AndroidViewModel(applicatio
                 } catch (failure: IOException) {
                     if (failure is ApiException || failure is ReconnectionRequiredException) throw failure
                     showingSavedData = true
-                    message = "Showing saved data. Your expenses are safe on this device."
+                    message = tr("Showing what's saved on this phone. Your splits are safe.")
                 }
             } finally {
                 refreshing = false
@@ -801,7 +810,7 @@ class SplitEaseViewModel(application: Application) : AndroidViewModel(applicatio
             } catch (failure: IOException) {
                 if (failure is ApiException || failure is ReconnectionRequiredException) throw failure
                 showingSavedData = true
-                message = "Showing saved data. Your expenses are safe on this device."
+                message = tr("Showing what's saved on this phone. Your splits are safe.")
             } finally {
                 if (showIndicator) refreshing = false
             }
@@ -902,7 +911,7 @@ class SplitEaseViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun createGroup(name: String, currency: String, done: () -> Unit) = work {
         validateInput(name.isNotBlank() && name.length <= 120) {
-            "Enter a group name, up to 120 characters."
+            "Enter a name for your Splits, up to 120 characters."
         }
         val code = currency.trim().uppercase(Locale.ROOT)
         validateInput(runCatching { java.util.Currency.getInstance(code) }.isSuccess) {
@@ -927,7 +936,7 @@ class SplitEaseViewModel(application: Application) : AndroidViewModel(applicatio
             json("email" to normalizedEmail),
         )
         loadGroup(group)
-        message = "Invitation created"
+        message = tr("Invitation created")
         done()
     }
 
@@ -942,11 +951,24 @@ class SplitEaseViewModel(application: Application) : AndroidViewModel(applicatio
             api.request(
                 "groups/${group.getString("id")}/contacts",
                 "POST",
-                json("name" to name, "email" to email, "phone" to phone),
+                json(
+                    "name" to name,
+                    "email" to email,
+                    "phone" to phone?.let { com.lambrk.splitease.ui.util.withCountryCode(it, getApplication<Application>()) ?: it },
+                ),
             )
         )
         loadGroup(group)
         done(member.getString("userId"))
+    }
+
+    /** The group's creator turns invoices and receipts on or off for the open group. */
+    internal fun setGroupInvoices(enabled: Boolean) = work {
+        val group = selected ?: return@work
+        renew()
+        api.request("groups/${group.getString("id")}/settings", "PATCH", json("invoicesEnabled" to enabled))
+        loadGroup(group)
+        message = if (enabled) "Invoices are on for this Splits." else "Invoices are off for this Splits."
     }
 
     /** Invites several people by email in one go; keeps going if one fails and says how many were sent. */
@@ -1059,7 +1081,7 @@ class SplitEaseViewModel(application: Application) : AndroidViewModel(applicatio
             ExpenseAttachment.fromExpense(draft).toSet()
         offline.cache(saved.accountKey, key, draft)
         localMaintenance("clear removed draft attachments") { attachmentFiles().discard(removed) }
-        message = "Draft saved on this device."
+        message = tr("Draft saved on this device.")
         done()
     }
 
@@ -1082,6 +1104,7 @@ class SplitEaseViewModel(application: Application) : AndroidViewModel(applicatio
         payByDate: String? = null,
         templateName: String? = null,
         dueDates: Map<String, String> = emptyMap(),
+        repeat: String? = null,
     ) = work {
         val group = selected ?: return@work
         val total = amount.toBigDecimalOrNull()
@@ -1199,12 +1222,13 @@ class SplitEaseViewModel(application: Application) : AndroidViewModel(applicatio
                     }
                 }
             }
-            message =
-                if (uploaded) "Expense saved"
-                else "Expense saved on this device. It will sync when connected."
+            if (repeat != null) createRepeat(group, payload, date, repeat)
+            else message =
+                if (uploaded) "Split saved"
+                else "Split saved on this phone. It will go online when you're connected."
         } else {
             validateInput(!original.getString("id").startsWith("local:")) {
-                "Wait for this expense to sync before editing."
+                "This split is still being saved. Try again in a moment."
             }
             renew()
             val files = attachmentFiles()
@@ -1214,10 +1238,127 @@ class SplitEaseViewModel(application: Application) : AndroidViewModel(applicatio
                 offline.dao.deleteSnapshot(saved.accountKey, draftKey)
                 files.discard(attachments + removed)
             }
-            message = "Expense saved"
+            message = tr("Split saved")
             done()
             loadGroup(group, onlyIfSelected = true)
         }
+    }
+
+    /** Splits that repeat in the open group. */
+    var recurring by mutableStateOf<List<JSONObject>>(emptyList())
+        private set
+
+    fun loadRecurring() {
+        val group = selected ?: return
+        viewModelScope.launch {
+            runCatching { JSONArray(api.request("recurring/group/${group.getString("id")}")).objects() }
+                .onSuccess { recurring = it }
+        }
+    }
+
+    fun setRecurringActive(id: String, active: Boolean) = work {
+        renew()
+        api.request("recurring/$id", "PATCH", json("active" to active))
+        message = if (active) "Repeat turned on." else "Repeat paused."
+        loadRecurring()
+    }
+
+    fun deleteRecurring(id: String) = work {
+        renew()
+        api.request("recurring/$id", "DELETE")
+        message = "Repeat stopped. Splits already added stay."
+        loadRecurring()
+    }
+
+    /** Sets up the repeat for a split that was just added; the next copy is one period after [date]. */
+    private suspend fun createRepeat(group: JSONObject, payload: JSONObject, date: String, frequency: String) {
+        val start = com.lambrk.splitease.ui.forms.nextRepeatDate(date, frequency)
+        if (start == null) { message = "Split saved"; return }
+        try {
+            renew()
+            val template = JSONObject(payload.toString())
+            listOf("groupId", "attachments", "attachmentIds", "receipt", "expenseDate", "payByDate").forEach { template.remove(it) }
+            api.request(
+                "recurring",
+                "POST",
+                json("groupId" to group.getString("id"), "frequency" to frequency, "startOn" to start, "expense" to template),
+            )
+            message = "Split saved. It will repeat automatically."
+            loadRecurring()
+        } catch (failure: IOException) {
+            if (failure is ReconnectionRequiredException) throw failure
+            message = "Split saved, but the repeat could not be set up. Connect to the internet and try again."
+        }
+    }
+
+    /** A request to remove someone from the open group: who, and the splits they are already part of. */
+    class MemberCheck(val id: String, val name: String, val usage: JSONObject)
+
+    var memberCheck by mutableStateOf<MemberCheck?>(null)
+        private set
+
+    fun dismissMemberCheck() { memberCheck = null }
+
+    /** Looks at whether [id] is already in any split before offering to remove them. */
+    fun checkMemberRemoval(id: String, name: String) = work {
+        val group = selected ?: return@work
+        renew()
+        val usage = JSONObject(api.request("groups/${group.getString("id")}/members/$id/usage"))
+        memberCheck = MemberCheck(id, name, usage)
+    }
+
+    /** [adjust]: also take them out of the splits they are in and share their part among everyone else. */
+    fun confirmRemoveMember(id: String, adjust: Boolean = false) = work {
+        val group = selected ?: return@work
+        renew()
+        api.request("groups/${group.getString("id")}/members/$id${if (adjust) "?adjust=true" else ""}", "DELETE")
+        memberCheck = null
+        message = if (adjust) "Removed. Their splits were updated and everyone affected was told." else "Removed from this Splits."
+        loadGroup(group)
+    }
+
+    /** The friend whose details are open, with the Splits and splits you share. Null while closed. */
+    var friendDetail by mutableStateOf<JSONObject?>(null)
+        private set
+    var friendDetailLoading by mutableStateOf(false)
+        private set
+    var friendDetailFailed by mutableStateOf(false)
+        private set
+
+    fun openFriend(id: String) {
+        friendDetail = null
+        friendDetailFailed = false
+        friendDetailLoading = true
+        viewModelScope.launch {
+            try {
+                operation.withLock {
+                    try {
+                        renew()
+                        friendDetail = JSONObject(api.request("friends/$id/overview"))
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (failure: Exception) {
+                        if (failure is ReconnectionRequiredException) requireReconnect()
+                        friendDetailFailed = true
+                    }
+                }
+            } finally {
+                friendDetailLoading = false
+            }
+        }
+    }
+
+    fun closeFriend() {
+        friendDetail = null
+        friendDetailFailed = false
+        friendDetailLoading = false
+    }
+
+    fun removeFriend(id: String) = work {
+        renew()
+        api.request("friends/$id", "DELETE")
+        message = "Friend removed."
+        refreshFriends()
     }
 
     /** Saved expense templates for the open group (newest first); empty when offline. */
@@ -1253,7 +1394,7 @@ class SplitEaseViewModel(application: Application) : AndroidViewModel(applicatio
                 json("userId" to personId, "amount" to value),
             )
         )
-        message = if (amount == null) "Marked as settled" else "Payment recorded"
+        message = if (amount == null) "Marked as paid" else "Marked as paid"
         done(updated)
         selected?.let { loadGroup(it, onlyIfSelected = true) }
     }
@@ -1269,14 +1410,14 @@ class SplitEaseViewModel(application: Application) : AndroidViewModel(applicatio
                 "channels" to JSONArray(listOfNotNull(if (push) "PUSH" else null, if (email) "EMAIL" else null)),
             ),
         )
-        message = if (email && !push) "Email queued" else "Reminder sent"
+        message = if (email && !push) "Email on its way" else "Reminder sent"
     }
 
     fun retryExpense(operationId: String) = work {
         val saved = account ?: return@work
         offline.dao.retry(saved.accountKey, operationId)
         ExpenseSync.schedule(context, saved.accountKey)
-        message = "We'll retry when a connection is available."
+        message = tr("We'll retry when a connection is available.")
     }
 
     internal fun deleteExpense(
@@ -1307,7 +1448,7 @@ class SplitEaseViewModel(application: Application) : AndroidViewModel(applicatio
     fun settle(suggestion: JSONObject) = work {
         val group = selected ?: return@work
         validateInput(suggestion.getString("fromUserId") == userId) {
-            "Only your own payments can be recorded."
+            "You can only mark your own payments."
         }
         renew()
         api.request(
@@ -1322,7 +1463,7 @@ class SplitEaseViewModel(application: Application) : AndroidViewModel(applicatio
             ),
         )
         loadGroup(group)
-        message = "Payment recorded"
+        message = tr("Marked as paid")
     }
 
     fun enablePush(enabled: Boolean) = work {
@@ -1403,7 +1544,56 @@ class SplitEaseViewModel(application: Application) : AndroidViewModel(applicatio
                 offline.dao.saveAccount(saved.copy(userJson = updated.toString()))
             }
         }
-        message = "Display name updated."
+        message = tr("Display name updated.")
+    }
+
+    /** Whether this person must confirm a phone number with an SMS code (the admin's switch or their own setting). */
+    var phoneVerificationRequired by mutableStateOf(true)
+        private set
+
+    fun refreshPhonePolicy() {
+        viewModelScope.launch {
+            runCatching { JSONObject(api.request("users/me/phone-policy")).optBoolean("required", true) }
+                .onSuccess { phoneVerificationRequired = it }
+        }
+    }
+
+    /** Remembers the chosen country on this phone right away, and on the account so it follows them to another phone. */
+    fun saveCountry(iso: String) {
+        com.lambrk.splitease.ui.util.saveChosenCountry(getApplication(), iso)
+        viewModelScope.launch {
+            runCatching {
+                val updated = JSONObject(api.request("users/me/country", "PUT", json("country" to iso)))
+                user = updated
+            }
+        }
+    }
+
+    /** Tells the backend the number was confirmed with a code; it reads the number from Firebase's signed token. */
+    fun verifyPhone(idToken: String, done: () -> Unit = {}) = work {
+        renew()
+        val updated = JSONObject(api.request("users/me/phone/verify", "PUT", json("idToken" to idToken)))
+        user = updated
+        account?.let { saved ->
+            localMaintenance("save updated profile") {
+                offline.dao.saveAccount(saved.copy(userJson = updated.toString()))
+            }
+        }
+        message = "Phone number verified."
+        done()
+    }
+
+    /** Removes the account's phone number. (Adding one goes through [verifyPhone].) */
+    fun savePhone(e164: String?) = work {
+        renew()
+        val updated = JSONObject(api.request("users/me/phone", "PUT", json("phone" to e164)))
+        user = updated
+        account?.let { saved ->
+            localMaintenance("save updated profile") {
+                offline.dao.saveAccount(saved.copy(userJson = updated.toString()))
+            }
+        }
+        message = if (e164 == null) "Phone number removed." else "Phone number saved."
     }
 
     fun saveUpiId(input: String) = work {
@@ -1433,7 +1623,7 @@ class SplitEaseViewModel(application: Application) : AndroidViewModel(applicatio
                 offline.dao.saveAccount(saved.copy(userJson = updated.toString()))
             }
         }
-        message = "UPI ID verified."
+        message = tr("UPI ID verified.")
     }
 
     private var cachedWebBase: String? = null
@@ -1504,7 +1694,7 @@ class SplitEaseViewModel(application: Application) : AndroidViewModel(applicatio
         renew()
         api.request("groups/invitations/${invitation.getString("id")}/resend", "POST")
         selected?.let { loadGroup(it) }
-        message = "Invitation sent again"
+        message = tr("Invitation sent again")
     }
 
     fun logout(activity: Activity) = work {
@@ -1527,12 +1717,12 @@ class SplitEaseViewModel(application: Application) : AndroidViewModel(applicatio
                     api.request("auth/logout", "POST", json("refreshToken" to it), timeoutSeconds = 8)
                 }
             } else {
-                message = "Signed out on this device. Server sign-out was skipped because there’s no internet connection."
+                message = tr("Signed out on this device. Server sign-out was skipped because there’s no internet connection.")
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
-            message = "Signed out on this device. SplitEase couldn’t confirm sign-out with the server."
+            message = tr("Signed out on this device. SplitEase couldn’t confirm sign-out with the server.")
         } finally {
             try {
                 account?.let {

@@ -2,6 +2,14 @@
 
 package com.lambrk.splitease.ui.forms
 
+import androidx.compose.material.icons.rounded.Sms
+import com.lambrk.splitease.ui.util.OwedLine
+import com.lambrk.splitease.ui.util.Messages
+import androidx.compose.material.icons.rounded.Repeat
+import androidx.compose.material.icons.rounded.Remove
+import androidx.compose.material.icons.rounded.Add
+import com.lambrk.splitease.ui.i18n.tr
+
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -25,6 +33,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -43,7 +52,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import com.lambrk.splitease.ui.i18n.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -156,7 +165,7 @@ internal fun ColumnScope.WhoIsInStep(
         modifier = Modifier.fillMaxWidth(),
         singleLine = true,
         leadingIcon = { Icon(Icons.Rounded.Search, null) },
-        placeholder = { Text("Search contacts or type a name") },
+        placeholder = { Text(tr("Search contacts or type a name")) },
         shape = RoundedCornerShape(18.dp),
     )
 
@@ -191,7 +200,7 @@ internal fun ColumnScope.WhoIsInStep(
     if (gangs.isNotEmpty() && query.isBlank()) {
         Surface(shape = RoundedCornerShape(18.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), color = MaterialTheme.colorScheme.surface) {
             Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("Recent gangs", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(tr("Recent gangs"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 gangs.forEach { gang ->
                     Row(
                         Modifier.fillMaxWidth().heightIn(min = 40.dp).clickable(enabled = enabledNow) { onParticipants(gang) },
@@ -227,7 +236,7 @@ internal fun ColumnScope.WhoIsInStep(
             onAction = {
                 if (contact?.email != null) model.invite(contact.email) { invited = invited + (contact.id + "!") }
                 else if (contact?.phone != null) model.shareInvite { text ->
-                    val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:${Uri.encode(contact.phone)}")).putExtra("sms_body", text)
+                    val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:${Uri.encode(com.lambrk.splitease.ui.util.withCountryCode(contact.phone, context) ?: contact.phone)}")).putExtra("sms_body", text)
                     context.startActivity(Intent.createChooser(intent, "Invite ${contact.name}"))
                     invited = invited + (contact.id + "!")
                 }
@@ -236,7 +245,7 @@ internal fun ColumnScope.WhoIsInStep(
     }
 
     if (!contactsAllowed) {
-        OutlinedButton(onClick = { permission.launch(Manifest.permission.READ_CONTACTS) }) { Text("Show my contacts") }
+        OutlinedButton(onClick = { permission.launch(Manifest.permission.READ_CONTACTS) }) { Text(tr("Show my contacts")) }
     } else {
         val memberEmails = members.map { it.optionalText("email").lowercase() }.filter { it.isNotBlank() }.toSet()
         val memberNames = members.map { personLabel(it.getString("userId")).substringBefore(" (").lowercase() }.toSet()
@@ -272,11 +281,11 @@ internal fun ColumnScope.WhoIsInStep(
             }
         }
         if (contacts != null && shownContacts.isEmpty() && shownMembers.isEmpty() && typedEmail == null) {
-            Text("No one found.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(tr("No one found."), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
     Text(
-        "Picking a contact adds them to this group. Invite them to SplitEase from their row so they can see and pay the split.",
+        tr("Picking a contact adds them to this Splits. Tap Invite on their row so they can see and pay their share."),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
@@ -354,7 +363,7 @@ internal fun ColumnScope.SplitItStep(
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Text(
-                            label,
+                            tr(label),
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
                         )
@@ -423,7 +432,7 @@ internal fun ColumnScope.SplitItStep(
     when (split) {
         "EQUAL" -> Text("Shared equally between ${people.size} ${if (people.size == 1) "person" else "people"}.")
         "SHARES" -> Text(
-            "Enter how many shares each person has. Someone with 2 shares pays twice as much as someone with 1.",
+            tr("Enter how many shares each person has. Someone with 2 shares pays twice as much as someone with 1."),
             style = MaterialTheme.typography.bodySmall,
         )
         else -> {
@@ -443,6 +452,42 @@ internal fun ColumnScope.SplitItStep(
     }
 }
 
+/**
+ * Turns computed per-person amounts into what the [to] tab expects (amounts, percentages that add up to 100,
+ * or the smallest whole share counts), so switching tabs never shows another tab's numbers.
+ */
+internal fun convertSplitValues(
+    to: String,
+    people: List<String>,
+    amounts: Map<String, BigDecimal>,
+    total: String,
+): Map<String, String> {
+    val totalValue = total.toBigDecimalOrNull()?.takeIf { it.signum() > 0 }
+    val known = people.mapNotNull { id -> amounts[id]?.let { id to it } }.toMap()
+    if (known.size != people.size || totalValue == null) {
+        return if (to == "SHARES") people.associateWith { "1" } else emptyMap()
+    }
+    return when (to) {
+        "EXACT" -> people.associateWith { known.getValue(it).setScale(2, java.math.RoundingMode.HALF_UP).toPlainString() }
+        "PERCENTAGE" -> {
+            var assigned = BigDecimal.ZERO
+            people.mapIndexed { index, id ->
+                val pct = if (index == people.lastIndex) BigDecimal(100) - assigned
+                else known.getValue(id).multiply(BigDecimal(100)).divide(totalValue, 2, java.math.RoundingMode.HALF_UP)
+                assigned += pct
+                id to pct.stripTrailingZeros().toPlainString()
+            }.toMap()
+        }
+        "SHARES" -> {
+            val cents = people.associateWith { known.getValue(it).movePointRight(2).setScale(0, java.math.RoundingMode.HALF_UP).toBigInteger() }
+            val divisor = cents.values.fold(java.math.BigInteger.ZERO) { acc, v -> acc.gcd(v) }
+            if (divisor.signum() == 0) people.associateWith { "1" }
+            else people.associateWith { cents.getValue(it).divide(divisor).toString() }
+        }
+        else -> emptyMap()
+    }
+}
+
 /** Whether the split can be saved as entered (the same rules the server enforces). */
 internal fun splitIsComplete(split: String, total: String, people: List<String>, shares: Map<String, String>): Boolean {
     if (people.isEmpty()) return false
@@ -459,6 +504,17 @@ internal fun splitIsComplete(split: String, total: String, people: List<String>,
 }
 
 // -------------------------------------------------------------------- Review
+
+/** The date a split that repeats [frequency] is added next, counting from [from] (YYYY-MM-DD). */
+internal fun nextRepeatDate(from: String, frequency: String): String? {
+    val date = runCatching { LocalDate.parse(from) }.getOrNull() ?: return null
+    return when (frequency) {
+        "WEEKLY" -> date.plusWeeks(1)
+        "MONTHLY" -> date.plusMonths(1)
+        "YEARLY" -> date.plusYears(1)
+        else -> null
+    }?.toString()
+}
 
 /** "Looks right?": a summary, a note, and the optional extras. */
 @Composable
@@ -485,6 +541,11 @@ internal fun ColumnScope.ReviewStep(
     dueFor: List<String> = emptyList(),
     personDue: Map<String, String> = emptyMap(),
     onPersonDue: (String, String?) -> Unit = { _, _ -> },
+    /** NULL for a one-time split, else WEEKLY, MONTHLY or YEARLY. Only offered when creating a new split. */
+    repeat: String? = null,
+    onRepeat: (String?) -> Unit = {},
+    showRepeat: Boolean = false,
+    splitDate: String = "",
 ) {
     Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -503,9 +564,29 @@ internal fun ColumnScope.ReviewStep(
     }
     Field(notes, onNotes, "Note (optional)", enabled = enabled)
 
+    if (showRepeat) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(androidx.compose.material.icons.Icons.Rounded.Repeat, null, Modifier.size(20.dp))
+            Text(tr("Repeat"), style = MaterialTheme.typography.titleSmall)
+        }
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf<Pair<String?, String>>(null to "Does not repeat", "WEEKLY" to "Every week", "MONTHLY" to "Every month", "YEARLY" to "Every year")
+                .forEach { (value, label) ->
+                    FilterChip(selected = repeat == value, onClick = { onRepeat(value) }, enabled = enabled, label = { Text(tr(label)) })
+                }
+        }
+        val next = repeat?.let { nextRepeatDate(splitDate, it) }
+        Text(
+            if (next != null) "Next one is added on ${friendlyDate(next)}. You can pause or stop it anytime from the Splits screen."
+            else "Rent, maid, internet or any bill that comes back? Choose how often and we'll add it for you.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(Icons.Rounded.Notifications, null, Modifier.size(20.dp))
-        Text("Auto-remind if unpaid", style = MaterialTheme.typography.titleSmall)
+        Text(tr("Auto-remind if unpaid"), style = MaterialTheme.typography.titleSmall)
     }
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         listOf(2, 3, 7).forEach { days ->
@@ -518,12 +599,12 @@ internal fun ColumnScope.ReviewStep(
         }
     }
     Text(
-        "You get a nudge with the message ready. The app never texts your friends itself.",
+        tr("You get a reminder with the message ready. The app never texts your friends itself."),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 
-    Text("Pay-by date", style = MaterialTheme.typography.titleSmall)
+    Text(tr("Pay-by date"), style = MaterialTheme.typography.titleSmall)
     val today = LocalDate.now()
     val options = listOf(
         "In 3 days" to today.plusDays(3),
@@ -536,19 +617,19 @@ internal fun ColumnScope.ReviewStep(
                 selected = payByDate == date.toString(),
                 onClick = { onPayBy(if (payByDate == date.toString()) null else date.toString()) },
                 enabled = enabled,
-                label = { Text(label) },
+                label = { Text(tr(label)) },
             )
         }
     }
     Text(
-        if (payByDate != null) "Pay by ${friendlyDate(payByDate)}. Friends see it on their settle page, and nudges say when it is late."
-        else "Friends see the date on their settle page, and nudges say when it is late.",
+        if (payByDate != null) "Pay by ${friendlyDate(payByDate)}. Friends see it on their payment page, and reminders say when it is late."
+        else "Friends see the date on their payment page, and reminders say when it is late.",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 
     if (dueFor.isNotEmpty()) {
-        Text("Due date per person (optional)", style = MaterialTheme.typography.titleSmall)
+        Text(tr("Pay-by date for each person (optional)"), style = MaterialTheme.typography.titleSmall)
         dueFor.forEach { id ->
             DueDateRow(
                 name = personLabel(id).substringBefore(" ("),
@@ -566,7 +647,7 @@ internal fun ColumnScope.ReviewStep(
             onClick = { onSaveTemplate(!saveTemplate) },
             enabled = enabled,
             leadingIcon = { Icon(Icons.Rounded.Bookmark, null, Modifier.size(18.dp)) },
-            label = { Text("Save as template") },
+            label = { Text(tr("Save as template")) },
         )
         if (saveTemplate) Field(templateName, onTemplateName, "Template name", enabled = enabled)
     }
@@ -578,7 +659,7 @@ internal fun ColumnScope.ReviewStep(
 @Composable
 internal fun ColumnScope.TemplateChips(templates: List<JSONObject>, onPick: (JSONObject) -> Unit) {
     if (templates.isEmpty()) return
-    Text("Start from a template", style = MaterialTheme.typography.titleSmall)
+    Text(tr("Start from a template"), style = MaterialTheme.typography.titleSmall)
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         templates.forEach { template ->
             AssistChip(
@@ -605,6 +686,12 @@ internal fun SharePaymentDialog(
     onPartial: (String) -> Unit,
     onNudge: (push: Boolean, email: Boolean) -> Unit,
     onDismiss: () -> Unit,
+    /** False for someone added from contacts who has no SplitEase account: no in-app or email reminders for them. */
+    onSplitEase: Boolean = true,
+    /** Their phone number, when you added them by number. */
+    phone: String? = null,
+    /** Who is sending the reminder (the payer), so it can say so. */
+    from: String = "",
 ) {
     val context = LocalContext.current
     var partial by remember { mutableStateOf("") }
@@ -629,18 +716,18 @@ internal fun SharePaymentDialog(
                 if (left.signum() > 0) {
                     Button(onClick = onSettle, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Rounded.Check, null)
-                        Text("Mark settled (money arrived)", Modifier.padding(start = 8.dp))
+                        Text(tr("Mark as paid (money received)"), Modifier.padding(start = 8.dp))
                     }
-                    Text("Partial amount received", style = MaterialTheme.typography.labelLarge)
+                    Text(tr("Part payment received"), style = MaterialTheme.typography.labelLarge)
                     Field(partial, { partial = com.lambrk.splitease.ui.components.sanitizeAmount(it) }, "e.g. ${left.divide(BigDecimal(2), 0, java.math.RoundingMode.DOWN).toPlainString()}", decimal = true)
                     OutlinedButton(
                         onClick = { onPartial(partial) },
                         enabled = !busy && partial.toBigDecimalOrNull()?.let { it.signum() > 0 && it <= left } == true,
                         modifier = Modifier.fillMaxWidth(),
-                    ) { Text("Record partial") }
+                    ) { Text(tr("Add part payment")) }
                     OutlinedButton(
                         onClick = {
-                            val text = "Hi $name, a friendly reminder to settle up ${money(left.toPlainString(), currency)} for \"$description\" on SplitEase."
+                            val text = Messages.reminder(name, from, listOf(OwedLine(description, money(left.toPlainString(), currency))), money(left.toPlainString(), currency))
                             val whatsapp = Intent(Intent.ACTION_SEND).setType("text/plain").setPackage("com.whatsapp")
                                 .putExtra(Intent.EXTRA_TEXT, text)
                             try {
@@ -657,15 +744,44 @@ internal fun SharePaymentDialog(
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Icon(Icons.Rounded.Notifications, null)
-                        Text("Nudge on WhatsApp", Modifier.padding(start = 8.dp))
+                        Text(tr("Remind on WhatsApp"), Modifier.padding(start = 8.dp))
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = { onNudge(true, false) }, enabled = !busy, modifier = Modifier.weight(1f)) {
-                            Text("Notify in app")
+                    if (onSplitEase) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(onClick = { onNudge(true, false) }, enabled = !busy, modifier = Modifier.weight(1f)) {
+                                Text(tr("Notify in app"))
+                            }
+                            OutlinedButton(onClick = { onNudge(false, true) }, enabled = !busy, modifier = Modifier.weight(1f)) {
+                                Text(tr("Send email"))
+                            }
                         }
-                        OutlinedButton(onClick = { onNudge(false, true) }, enabled = !busy, modifier = Modifier.weight(1f)) {
-                            Text("Send email")
+                    } else {
+                        val text = Messages.reminder(name, from, listOf(OwedLine(description, money(left.toPlainString(), currency))), money(left.toPlainString(), currency))
+                        OutlinedButton(
+                            onClick = {
+                                val intent = if (phone != null) {
+                                    Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:${Uri.encode(phone)}")).putExtra("sms_body", text)
+                                } else {
+                                    Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text), "Send a message")
+                                }
+                                try {
+                                    context.startActivity(intent)
+                                } catch (_: Exception) {
+                                    context.startActivity(
+                                        Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text), "Send a message")
+                                    )
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Icon(Icons.Rounded.Sms, null)
+                            Text(tr("Send a message"), Modifier.padding(start = 8.dp))
                         }
+                        Text(
+                            "$name isn't on SplitEase yet, so the message goes from your phone.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
             }
@@ -704,12 +820,12 @@ internal fun SplitLiveScreen(
             Surface(Modifier.size(72.dp), shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
                 Icon(Icons.Rounded.Check, "Done", Modifier.padding(18.dp), tint = MaterialTheme.colorScheme.primary)
             }
-            Text("Split is live", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            Text("Now send it where the gang already is.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(tr("Split is live"), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+            Text(tr("Now send it where the gang already is."), color = MaterialTheme.colorScheme.onSurfaceVariant)
             Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
                 Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Button(onClick = { send(summary, "Send to the group chat") }, modifier = Modifier.fillMaxWidth()) {
-                        Text("Send to the group chat")
+                    Button(onClick = { send(summary, "Send to everyone") }, modifier = Modifier.fillMaxWidth()) {
+                        Text(tr("Send to everyone"))
                     }
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         people.forEachIndexed { i, (name, amount) ->
@@ -736,16 +852,16 @@ internal fun SplitLiveScreen(
                             clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Split", summary))
                         },
                         modifier = Modifier.fillMaxWidth(),
-                    ) { Text("Copy message") }
+                    ) { Text(tr("Copy message")) }
                 }
             }
             Text(
-                "Messages go from your own phone, through WhatsApp or any chat app you pick.",
+                tr("Messages go from your own phone, through WhatsApp or any chat app you pick."),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             if (onShowQr != null) {
-                OutlinedButton(onClick = onShowQr, modifier = Modifier.fillMaxWidth()) { Text("Show QR to collect") }
+                OutlinedButton(onClick = onShowQr, modifier = Modifier.fillMaxWidth()) { Text(tr("Show QR to get paid")) }
             }
             OutlinedButton(onClick = onDone, modifier = Modifier.fillMaxWidth()) { Text("Done") }
         }
@@ -798,7 +914,7 @@ private fun CompactNumberField(
     )
 }
 
-/** − 1 + control for the number of shares. */
+/** Minus and plus control for the number of shares. */
 @Composable
 private fun ShareStepper(value: String, onChange: (String) -> Unit, enabled: Boolean) {
     val current = value.toBigDecimalOrNull() ?: BigDecimal.ZERO
@@ -809,10 +925,12 @@ private fun ShareStepper(value: String, onChange: (String) -> Unit, enabled: Boo
                 onClick = { set(current - BigDecimal.ONE) },
                 enabled = enabled && current.signum() > 0,
                 modifier = Modifier.size(36.dp),
-            ) { Text("−", style = MaterialTheme.typography.titleLarge) }
+            ) { androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Rounded.Remove, contentDescription = "Fewer") }
             Text(
                 current.stripTrailingZeros().toPlainString(),
-                Modifier.width(32.dp),
+                Modifier.widthIn(min = 32.dp).padding(horizontal = 4.dp),
+                maxLines = 1,
+                softWrap = false,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -821,7 +939,7 @@ private fun ShareStepper(value: String, onChange: (String) -> Unit, enabled: Boo
                 onClick = { set(current + BigDecimal.ONE) },
                 enabled = enabled,
                 modifier = Modifier.size(36.dp),
-            ) { Text("+", style = MaterialTheme.typography.titleLarge) }
+            ) { androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Rounded.Add, contentDescription = "More") }
         }
     }
 }
@@ -841,14 +959,14 @@ internal fun ColumnScope.UpiPrompt(model: SplitEaseViewModel) {
     var value by remember { mutableStateOf("") }
     Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
         Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Get paid on UPI", style = MaterialTheme.typography.titleSmall)
+            Text(tr("Get paid on UPI"), style = MaterialTheme.typography.titleSmall)
             Text(
-                "Add your UPI ID and your friends can pay this expense with one tap, even without the app.",
+                tr("Add your UPI ID so friends can pay you in one tap, even without the app."),
                 style = MaterialTheme.typography.bodySmall,
             )
             Field(value, { value = it.trim() }, "name@bank")
             OutlinedButton(onClick = { model.saveUpiId(value) }, enabled = !model.busy && value.isNotBlank()) {
-                Text("Save UPI ID")
+                Text(tr("Save UPI ID"))
             }
         }
     }

@@ -1,5 +1,9 @@
 package com.lambrk.splitease.ui.forms
 
+import com.lambrk.splitease.ui.util.Messages
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.lambrk.splitease.ui.i18n.tr
+
 import com.lambrk.splitease.ui.util.friendlyDate
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -29,7 +33,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import com.lambrk.splitease.ui.i18n.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -92,7 +96,7 @@ internal fun ExpenseEditorSheet(
         try {
             val saved = model.expenseDraft(draftKey)
             if (requestedDraftKey != null && saved == null) {
-                model.error = "This expense draft is no longer available."
+                model.error = tr("This draft is no longer available.")
                 dismiss()
                 return@LaunchedEffect
             }
@@ -101,7 +105,7 @@ internal fun ExpenseEditorSheet(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
-            model.error = "The expense draft couldn’t be opened. Try again."
+            model.error = tr("This draft couldn’t be opened. Please try again.")
             dismiss()
         }
     }
@@ -133,7 +137,6 @@ private fun ExpenseEditorContent(
     var split by remember {
         mutableStateOf(
             if (draft != null) draft.getString("splitType")
-            else if (original?.optString("splitType") in setOf("PERCENTAGE", "SHARES")) "EXACT"
             else original?.optString("splitType") ?: "EQUAL"
         )
     }
@@ -142,8 +145,18 @@ private fun ExpenseEditorContent(
         mutableStateOf(
             draft?.optJSONObject("shareValues")?.let { values ->
                 values.keys().asSequence().associateWith { values.getString(it) }
-            } ?: original?.optJSONArray("shares")?.objects().orEmpty()
-                .associate { it.getString("userId") to it.optString("value") }
+            } ?: original?.optJSONArray("shares")?.objects().orEmpty().let { rows ->
+                val type = original?.optString("splitType")
+                if (type == "PERCENTAGE" || type == "SHARES") {
+                    // The server only returns final amounts, so rebuild the percentages / share counts from them.
+                    convertSplitValues(
+                        type,
+                        rows.map { it.getString("userId") },
+                        rows.associate { it.getString("userId") to (it.optString("amount").toBigDecimalOrNull() ?: java.math.BigDecimal.ZERO) },
+                        original?.optString("amount").orEmpty(),
+                    )
+                } else rows.associate { it.getString("userId") to it.optString("value") }
+            }
         )
     }
     var date by remember {
@@ -171,6 +184,7 @@ private fun ExpenseEditorContent(
                     .associate { it.getString("userId") to it.getString("payByDate").take(10) })
         )
     }
+    var repeat by rememberSaveable { mutableStateOf<String?>(null) }
     var saveTemplate by remember { mutableStateOf(false) }
     var templateName by remember { mutableStateOf("") }
     var templates by remember { mutableStateOf(emptyList<JSONObject>()) }
@@ -182,6 +196,7 @@ private fun ExpenseEditorContent(
     var live by remember { mutableStateOf(false) }
     var historyFile by remember { mutableStateOf<ExpenseAttachment?>(null) }
     var showQr by remember { mutableStateOf(false) }
+    var showScan by remember { mutableStateOf(false) }
     var shareLink by remember { mutableStateOf<String?>(null) }
     val categorySuggestions = remember { model.categorySuggestions() }
     var confirmDelete by remember { mutableStateOf(false) }
@@ -219,8 +234,8 @@ private fun ExpenseEditorContent(
                         failed = true
                     }
                 }
-                if (failed) model.error = "Some files couldn’t be attached. Choose readable files up to 10 MB each."
-                else if (uris.size > remaining) model.error = "You can attach up to five files per expense."
+                if (failed) model.error = tr("Some files couldn’t be attached. Choose readable files up to 10 MB each.")
+                else if (uris.size > remaining) model.error = tr("You can attach up to 5 files to a split.")
             } finally {
                 staging = false
             }
@@ -234,12 +249,12 @@ private fun ExpenseEditorContent(
             try {
                 val file = model.openAttachment(attachment)
                 if (!openAttachmentInAndroid(context, attachment, file)) {
-                    model.error = "No installed app can open this file type."
+                    model.error = tr("No installed app can open this file type.")
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
-                model.error = "This attachment couldn’t be opened."
+                model.error = tr("This attachment couldn’t be opened.")
             } finally {
                 openingDocument = false
             }
@@ -318,16 +333,28 @@ private fun ExpenseEditorContent(
     }
     if (live) {
         SplitLiveScreen(
-            summary = "${description.trim()} · ${money(amount, currency)}\n" +
-                ordered.joinToString("\n") { id -> "${memberName(id, model)}: ${shareAmounts[id]?.let { money(it.toPlainString(), currency) } ?: "—"}" } +
-                "\nPaid by ${memberName(payerId, model)}" + (payByDate?.let { "\nPay by ${friendlyDate(it)}" } ?: "") +
-                (shareLink?.let { "\nPay / details: $it" } ?: ""),
+            summary = Messages.groupSplit(
+                title = description.trim(),
+                total = money(amount, currency),
+                paidBy = memberName(payerId, model),
+                owes = ordered.filter { it != payerId }.map { id -> memberName(id, model) to (shareAmounts[id]?.let { money(it.toPlainString(), currency) } ?: "-") },
+                payBy = payByDate?.let { friendlyDate(it) },
+                link = shareLink,
+                upiId = null,
+            ),
             people = ordered.filter { it != model.userId }.map { id ->
                 memberName(id, model) to (shareAmounts[id]?.let { money(it.toPlainString(), currency) } ?: "—")
             },
             personalMessage = { name, owed ->
-                "Hi $name, I added \"${description.trim()}\" on SplitEase. Your share is $owed." +
-                    (payByDate?.let { " Please pay by ${friendlyDate(it)}." } ?: "")
+                Messages.personalShare(
+                    to = name,
+                    title = description.trim(),
+                    amount = owed,
+                    paidBy = memberName(payerId, model),
+                    payBy = payByDate?.let { friendlyDate(it) },
+                    link = shareLink,
+                    upiId = null,
+                )
             },
             onShowQr = if (currency == "INR" && !model.user?.optionalText("upiId").isNullOrBlank() && ordered.any { it != payerId }) { { showQr = true } } else null,
             onDone = dismiss,
@@ -335,12 +362,12 @@ private fun ExpenseEditorContent(
     } else FormScreen(
         title = when {
             viewOnly -> "Draft details"
-            original == null -> "New expense"
-            else -> "Expense details"
+            original == null -> "New split"
+            else -> "Split details"
         },
         model = model,
         dismiss = dismiss,
-        submitLabel = if (original == null) "Create split" else "Save expense",
+        submitLabel = if (original == null) "Create split" else "Save split",
         submitEnabled = !staging && !openingDocument && description.isNotBlank() && amount.isNotBlank(),
         onSubmit = if (!editable) null else {
             {
@@ -367,6 +394,7 @@ private fun ExpenseEditorContent(
                     payByDate = payByDate,
                     dueDates = personDue.filterKeys { it in participants },
                     templateName = if (saveTemplate) templateName.ifBlank { description }.trim() else null,
+                    repeat = if (original == null) repeat else null,
                 )
             }
         },
@@ -377,10 +405,11 @@ private fun ExpenseEditorContent(
             !blocked && !changed
         },
         steps = listOf(
-            FormStep("What did you share?", "${group.getString("name")} · ${group.getString("defaultCurrency")}", valid = description.isNotBlank() && amount.isNotBlank()) {
+            FormStep(tr("What did you share?"), "${group.getString("name")} · ${group.getString("defaultCurrency")}", valid = description.isNotBlank() && amount.isNotBlank()) {
+                if (editable && original == null) ScanReceiptCard { showScan = true }
                 if (editable && original == null) TemplateChips(templates, ::applyTemplate)
         if (draft != null) {
-            Text("Draft · Not submitted", color = MaterialTheme.colorScheme.primary)
+            Text(tr("Draft · Not submitted"), color = MaterialTheme.colorScheme.primary)
         }
         Field(description, { description = it }, "Description", enabled = editable)
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -406,18 +435,13 @@ private fun ExpenseEditorContent(
         DateField(date, { date = it }, "Date", enabled = editable)
         CategoryField(category, { category = it }, categorySuggestions, enabled = editable)
             },
-            FormStep("Who's in?", "Search your group or pick from your contacts.", valid = participants.isNotEmpty()) {
+            FormStep(tr("Who's in?"), tr("Search the people in this Splits, or pick from your contacts."), valid = participants.isNotEmpty()) {
                 WhoIsInStep(model, members, participants, { participants = it }, editable, ::personLabel)
             },
             FormStep(
-                "Split it",
+                tr("Split it"),
                 valid = splitIsComplete(split, amount, ordered, shares),
             ) {
-                if (original?.optString("splitType") in setOf("PERCENTAGE", "SHARES"))
-                    Text(
-                        "Existing percent and share splits are shown as their final amounts. Choose % or Shares to enter new values.",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
                 SplitItStep(
                     model = model,
                     total = amount,
@@ -425,8 +449,10 @@ private fun ExpenseEditorContent(
                     split = split,
                     onSplit = { type ->
                         if (split != type) highlightShares = false
+                        if (type != "EQUAL" && type != split) {
+                            shares = convertSplitValues(type, ordered, shareAmounts, amount)
+                        }
                         split = type
-                        if (type == "SHARES") shares = shares + ordered.filter { shares[it].isNullOrBlank() }.associateWith { "1" }
                     },
                     people = ordered,
                     shares = shares,
@@ -448,10 +474,10 @@ private fun ExpenseEditorContent(
                     onPaymentClick = { payTarget = it },
                 )
             },
-            FormStep("Looks right?", valid = true) {
+            FormStep(tr("Looks right?"), valid = true) {
                 if (editable && original == null && currency == "INR") UpiPrompt(model)
                 if (payerId == model.userId && currency == "INR" && !model.user?.optionalText("upiId").isNullOrBlank() && ordered.any { it != payerId } && splitIsComplete(split, amount, ordered, shares)) {
-                    OutlinedButton(onClick = { showQr = true }, modifier = Modifier.fillMaxWidth()) { Text("Show QR to collect") }
+                    OutlinedButton(onClick = { showQr = true }, modifier = Modifier.fillMaxWidth()) { Text(tr("Show QR to get paid")) }
                 }
                 ReviewStep(
                     description = description,
@@ -473,6 +499,10 @@ private fun ExpenseEditorContent(
                     onTemplateName = { templateName = it },
                     enabled = editable,
                     showTemplate = editable && original == null,
+                    repeat = repeat,
+                    onRepeat = { repeat = it },
+                    showRepeat = editable && original == null,
+                    splitDate = date,
                     dueFor = ordered.filter { it != payerId },
                     personDue = personDue,
                     onPersonDue = { id, date -> personDue = if (date == null) personDue - id else personDue + (id to date) },
@@ -512,9 +542,9 @@ private fun ExpenseEditorContent(
                 onClick = { picker.launch(arrayOf("*/*")) },
             ) {
                 Icon(Icons.Rounded.AttachFile, contentDescription = null)
-                Text("Add files")
+                Text(tr("Add files"))
             }
-            Text("Up to 10 MB per file. Photos are converted to JPEG, PNG or WebP.", style = MaterialTheme.typography.bodySmall)
+            Text(tr("Up to 10 MB per file. Photos are converted to JPEG, PNG or WebP."), style = MaterialTheme.typography.bodySmall)
         }
         if (original != null && !pending && !viewOnly) {
             var historyOpen by remember { mutableStateOf(false) }
@@ -522,7 +552,7 @@ private fun ExpenseEditorContent(
             Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
                 Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Change history", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                        Text(tr("Change history"), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
                         TextButton(
                             enabled = !model.busy,
                             onClick = {
@@ -543,7 +573,7 @@ private fun ExpenseEditorContent(
                             )
                             model.busy -> LinearProgressIndicator(Modifier.fillMaxWidth())
                             else -> Text(
-                                "No history yet.",
+                                tr("No history yet."),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -557,17 +587,34 @@ private fun ExpenseEditorContent(
                     enabled = !model.busy && !staging && !openingDocument,
                     onClick = { confirmDelete = true },
                 ) {
-                    Text("Delete expense", color = MaterialTheme.colorScheme.error)
+                    Text(tr("Delete split"), color = MaterialTheme.colorScheme.error)
                 }
         if (!editable && !viewOnly)
             Text(
-                if (pending) "Sync this expense before editing."
-                else "Only the person who paid can change this expense.",
+                if (pending) "This split is still being saved. Try again in a moment."
+                else "Only the person who paid can change this split.",
                 style = MaterialTheme.typography.bodySmall,
             )
             },
         ),
     )
+    if (showScan) {
+        ReceiptScanSheet(
+            currency = currency,
+            onDismiss = { showScan = false },
+            onApply = { scan ->
+                showScan = false
+                if (description.isBlank() && scan.merchant.isNotBlank()) description = scan.merchant
+                amount = scan.total
+                scan.date?.let { date = it.toString() }
+                scan.itemsNote?.let { notes = if (notes.isBlank()) it else notes + "\n" + it }
+                // Keep the photo with the split so everyone can see the bill.
+                if (attachments.size < MAX_EXPENSE_ATTACHMENTS) {
+                    scope.launch { runCatching { attachments = attachments + model.stageAttachment(scan.photo) } }
+                }
+            },
+        )
+    }
     if (showQr) {
         UpiQrDialog(
             upiId = model.user?.optionalText("upiId").orEmpty(),
@@ -603,14 +650,17 @@ private fun ExpenseEditorContent(
                 },
                 onNudge = { push, email -> model.nudgeUnpaid(original, id, push, email) },
                 onDismiss = { payTarget = null },
+                from = model.user?.optionalText("displayName").orEmpty(),
+                onSplitEase = members.firstOrNull { it.getString("userId") == id }?.optBoolean("pending") != true,
+                phone = members.firstOrNull { it.getString("userId") == id }?.optionalText("contactPhone")?.ifBlank { null },
             )
         }
     }
     if (confirmDraft) {
         AlertDialog(
             onDismissRequest = { if (!model.busy) confirmDraft = false },
-            title = { Text("Save this draft?") },
-            text = { Text("Keep your changes on this device and submit the expense later.") },
+            title = { Text(tr("Save this draft?")) },
+            text = { Text(tr("Keep your changes on this device and finish this split later.")) },
             confirmButton = {
                 TextButton(
                     enabled = !model.busy,
@@ -620,13 +670,13 @@ private fun ExpenseEditorContent(
                             dismiss()
                         }
                     },
-                ) { Text("Save draft") }
+                ) { Text(tr("Save draft")) }
             },
             dismissButton = {
                 TextButton(
                     enabled = !model.busy,
                     onClick = { confirmDraft = false },
-                ) { Text("Keep editing") }
+                ) { Text(tr("Keep editing")) }
             },
         )
     }
@@ -651,18 +701,18 @@ private fun ExpenseEditorContent(
     shareTotalError?.let { message ->
         AlertDialog(
             onDismissRequest = { shareTotalError = null },
-            title = { Text("Check the split") },
+            title = { Text(tr("Check the split")) },
             text = { Text(message) },
             confirmButton = {
-                TextButton(onClick = { shareTotalError = null }) { Text("Edit shares") }
+                TextButton(onClick = { shareTotalError = null }) { Text(tr("Edit shares")) }
             },
         )
     }
     if (confirmDelete && original != null)
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
-            title = { Text("Delete expense?") },
-            text = { Text("This removes the expense and updates the group's balances.") },
+            title = { Text(tr("Delete this split?")) },
+            text = { Text(tr("This removes the split and updates what everyone owes.")) },
             confirmButton = {
                 TextButton(
                     enabled = !model.busy,

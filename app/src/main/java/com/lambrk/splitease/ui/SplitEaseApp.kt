@@ -1,5 +1,7 @@
 package com.lambrk.splitease.ui
 
+import com.lambrk.splitease.ui.i18n.tr
+
 import android.Manifest
 import android.app.Activity
 import android.content.Context
@@ -28,7 +30,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import com.lambrk.splitease.ui.i18n.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -65,8 +67,8 @@ internal fun SplitEaseApp(
     if (model.user != null && !model.restoringSession && model.friendInvitePending) {
         AlertDialog(
             onDismissRequest = { if (!model.busy) model.dismissFriendInvite() },
-            title = { Text("Accept friend invitation?") },
-            text = { Text("You'll be connected in Friends on SplitEase.") },
+            title = { Text(tr("Accept friend invitation?")) },
+            text = { Text(tr("You'll be connected in Friends on SplitEase.")) },
             confirmButton = {
                 TextButton(onClick = model::acceptPendingFriendInvite, enabled = !model.busy) {
                     Text("Accept")
@@ -81,6 +83,7 @@ internal fun SplitEaseApp(
     }
     var form by remember { mutableStateOf<AppForm?>(null) }
     var editing by remember { mutableStateOf<JSONObject?>(null) }
+    var viewing by remember { mutableStateOf<JSONObject?>(null) }
     var expenseDraftKey by remember { mutableStateOf<String?>(null) }
     var viewingDraft by remember { mutableStateOf(false) }
     var payment by remember { mutableStateOf<JSONObject?>(null) }
@@ -186,7 +189,7 @@ internal fun SplitEaseApp(
                         }
                     },
                     icon = { Icon(Icons.Rounded.Add, null) },
-                    text = { Text(if (model.selected == null) "New group" else "Add expense") },
+                    text = { Text(if (model.selected == null) "New Splits" else "Add split") },
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                 )
             }
@@ -202,8 +205,8 @@ internal fun SplitEaseApp(
                 ) {
                     Text(
                         if (waitingToSync)
-                            "${model.pendingExpenseCount} expenses waiting to sync. Saved on this device."
-                        else "Showing saved data. We’ll retry when SplitEase can sync.",
+                            "${model.pendingExpenseCount} splits waiting to be saved online. Safe on this phone."
+                        else "Showing what's saved on this phone. We'll try again soon.",
                         modifier = Modifier.padding(16.dp),
                         style = MaterialTheme.typography.bodySmall,
                     )
@@ -211,7 +214,7 @@ internal fun SplitEaseApp(
             }
             if (model.user != null && model.needsReconnect) {
                 Text(
-                    "Your saved data is available. Reconnect your account from Profile to sync updates.",
+                    tr("Your saved splits are here. Sign in again from Profile to get the latest."),
                     modifier = Modifier.padding(16.dp),
                     style = MaterialTheme.typography.bodySmall,
                 )
@@ -228,10 +231,7 @@ internal fun SplitEaseApp(
                     onInvite = { form = AppForm.InviteMember },
                     onEdit = {
                         model.clearHistory()
-                        editing = it
-                        expenseDraftKey = null
-                        viewingDraft = false
-                        form = AppForm.ExpenseEditor
+                        viewing = it
                     },
                     onDraft = ::openDraft,
                     onPay = { payment = it },
@@ -254,6 +254,23 @@ internal fun SplitEaseApp(
                 }
         }
     }
+    viewing?.let { expense ->
+        if (model.user != null) {
+            com.lambrk.splitease.ui.forms.ExpenseViewSheet(
+                model = model,
+                expense = expense,
+                onEdit = {
+                    model.clearHistory()
+                    editing = expense
+                    expenseDraftKey = null
+                    viewingDraft = false
+                    viewing = null
+                    form = AppForm.ExpenseEditor
+                },
+                dismiss = { viewing = null; model.clearHistory() },
+            )
+        }
+    }
     payment?.let { suggestion ->
         RecordPaymentDialog(
             suggestion,
@@ -273,7 +290,7 @@ internal fun SplitEaseApp(
                     tint = MaterialTheme.colorScheme.error,
                 )
             },
-            title = { Text("Something needs attention") },
+            title = { Text(tr("Something needs attention")) },
             text = { Text(error) },
             confirmButton = {
                 TextButton(onClick = { model.error = null }) { Text("OK") }

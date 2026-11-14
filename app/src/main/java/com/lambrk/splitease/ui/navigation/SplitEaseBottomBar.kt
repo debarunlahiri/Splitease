@@ -14,8 +14,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.Text
+import com.lambrk.splitease.ui.i18n.Text
 import androidx.compose.runtime.Composable
+import com.lambrk.splitease.ui.i18n.tr
 
 @Composable
 internal fun SplitEaseBottomBar(
@@ -36,7 +37,7 @@ internal fun SplitEaseBottomBar(
                 destination ->
                 val label =
                     when (destination) {
-                        AppDestination.Groups -> "Groups"
+                        AppDestination.Groups -> "Splits"
                         AppDestination.Friends -> "Friends"
                         AppDestination.Ledger -> "Ledger"
                         AppDestination.Activity -> "Activity"
@@ -63,7 +64,7 @@ internal fun SplitEaseBottomBar(
                             Icon(icon, label)
                         }
                     },
-                    label = { Text(label) },
+                    label = { Text(tr(label)) },
                 )
             }
         }

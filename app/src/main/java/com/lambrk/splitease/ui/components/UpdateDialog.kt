@@ -1,12 +1,14 @@
 package com.lambrk.splitease.ui.components
 
+import com.lambrk.splitease.ui.i18n.tr
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import com.lambrk.splitease.ui.i18n.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -51,17 +53,17 @@ internal fun UpdateDialog(updates: AppUpdateViewModel) {
                         } else {
                             LinearProgressIndicator(Modifier.fillMaxWidth())
                         }
-                        Text("Downloading…", style = MaterialTheme.typography.bodySmall)
+                        Text(tr("Downloading…"), style = MaterialTheme.typography.bodySmall)
                     }
                     Phase.NeedsPermission ->
                         Text(
-                            "Android needs your permission to install updates from SplitEase. " +
+                            tr("Android needs your permission to install updates from SplitEase. ") +
                                 "Tap Allow installs, switch on Allow from this source, then come back.",
                             style = MaterialTheme.typography.bodySmall,
                         )
                     Phase.Ready ->
                         Text(
-                            "Finish installing in the window Android opened. If it closed, tap Install.",
+                            tr("Finish installing in the window Android opened. If it closed, tap Install."),
                             style = MaterialTheme.typography.bodySmall,
                         )
                     Phase.Failed ->

@@ -1,5 +1,8 @@
 package com.lambrk.splitease.ui.components
 
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+import com.lambrk.splitease.ui.i18n.tr
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,7 +18,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import com.lambrk.splitease.ui.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -114,7 +117,7 @@ private fun ChangeRow(
                         textDecoration = if (removed) TextDecoration.LineThrough else null,
                     )
                     Text(
-                        "Tap to view",
+                        tr("Tap to view"),
                         style = MaterialTheme.typography.bodySmall,
                         color = colors.onSurfaceVariant,
                     )
@@ -142,7 +145,7 @@ private fun ChangeRow(
                         textDecoration = TextDecoration.LineThrough,
                         modifier = Modifier.weight(1f, fill = false),
                     )
-                    Text("→", color = colors.onSurfaceVariant)
+                    androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.AutoMirrored.Rounded.ArrowForward, contentDescription = null, tint = colors.onSurfaceVariant, modifier = Modifier.size(16.dp))
                 }
                 Text(to, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f, fill = false))
             }

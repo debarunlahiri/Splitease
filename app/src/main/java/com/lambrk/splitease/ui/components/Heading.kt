@@ -14,7 +14,7 @@ import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import com.lambrk.splitease.ui.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,7 +49,7 @@ internal fun Heading(
             ) {
                 if (onBack != null) {
                     FilledTonalIconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back to groups")
+                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back to Splits")
                     }
                 } else if (!photoUrl.isNullOrBlank()) {
                     ProfileAvatar(photoUrl, size = 48.dp)

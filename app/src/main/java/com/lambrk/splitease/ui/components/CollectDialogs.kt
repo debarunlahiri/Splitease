@@ -2,6 +2,9 @@
 
 package com.lambrk.splitease.ui.components
 
+import com.lambrk.splitease.ui.util.Messages
+import com.lambrk.splitease.ui.i18n.tr
+
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
@@ -22,7 +25,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Text
+import com.lambrk.splitease.ui.i18n.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -65,22 +68,29 @@ internal fun CollectAllSheet(
             )
         )
     }
-    val groupMessage = buildString {
-        append("$groupName · ${money(total.toPlainString(), currency)} to collect\n")
-        owing.forEach { (name, amount) -> append("$name owes ${money(amount, currency)}\n") }
-        append("Paid by $myName")
-        if (upi.isNotBlank() && currency == "INR") append(" · UPI $upi")
-        link?.let { append("\nPay / details: $it") }
-    }
+    val upiForMessage = upi.takeIf { it.isNotBlank() && currency == "INR" }
+    val groupMessage = Messages.groupSplit(
+        title = "$groupName: what everyone owes",
+        total = money(total.toPlainString(), currency),
+        paidBy = myName,
+        owes = owing.map { (name, amount) -> name to money(amount, currency) },
+        payBy = null,
+        link = link,
+        upiId = upiForMessage,
+    )
     // A link for one person opens straight to their share.
     val targetLink = link?.let { if (target != null) "$it?p=$target" else it }
     val message = target?.let { i ->
         owing.getOrNull(i)?.let { (name, amount) ->
-            buildString {
-                append("Hi ${name.substringBefore(" ")}, your share for $groupName is ${money(amount, currency)}.")
-                if (upi.isNotBlank() && currency == "INR") append(" Pay $myName on UPI: $upi.")
-                targetLink?.let { append("\nPay here: $it") }
-            }
+            Messages.personalShare(
+                to = name,
+                title = groupName,
+                amount = money(amount, currency),
+                paidBy = myName,
+                payBy = null,
+                link = targetLink,
+                upiId = upiForMessage,
+            )
         }
     } ?: groupMessage
     fun send(text: String, whatsapp: Boolean = false) {
@@ -101,7 +111,7 @@ internal fun CollectAllSheet(
             Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 28.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text("Collect from everyone", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(tr("Ask everyone to pay"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Text(money(total.toPlainString(), currency), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             owing.forEach { (name, amount) ->
                 Text("$name · ${money(amount, currency)}", style = MaterialTheme.typography.bodyLarge)
@@ -110,10 +120,10 @@ internal fun CollectAllSheet(
             if (currency == "INR" && upi.isNotBlank()) {
                 Button(onClick = { showQr = true }, Modifier.fillMaxWidth()) {
                     androidx.compose.material3.Icon(Icons.Rounded.QrCode2, null)
-                    Text("Show QR (pick a person)", Modifier.padding(start = 8.dp))
+                    Text(tr("Show QR (pick a person)"), Modifier.padding(start = 8.dp))
                 }
             } else if (currency == "INR") {
-                Text("Add your UPI ID in the You tab to collect with a QR code.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(tr("Add your UPI ID in the You tab to get paid with a QR code."), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             OutlinedButton(onClick = { send(message, whatsapp = true) }, Modifier.fillMaxWidth()) {
                 androidx.compose.material3.Icon(Icons.Rounded.Share, null)
@@ -131,7 +141,7 @@ internal fun CollectAllSheet(
                 Modifier.fillMaxWidth(),
             ) {
                 androidx.compose.material3.Icon(Icons.Rounded.ContentCopy, null)
-                Text("Copy message", Modifier.padding(start = 8.dp))
+                Text(tr("Copy message"), Modifier.padding(start = 8.dp))
             }
         }
     }
@@ -183,12 +193,12 @@ internal fun IPaidDialog(
 @Composable
 internal fun SendToChips(names: List<String>, target: Int?, onTarget: (Int?) -> Unit) {
     if (names.isEmpty()) return
-    Text("Send to", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Text(tr("Send to"), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
     androidx.compose.foundation.layout.Row(
         Modifier.horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        androidx.compose.material3.FilterChip(selected = target == null, onClick = { onTarget(null) }, label = { Text("Everyone / group chat") })
+        androidx.compose.material3.FilterChip(selected = target == null, onClick = { onTarget(null) }, label = { Text("Everyone") })
         names.forEachIndexed { i, name ->
             androidx.compose.material3.FilterChip(selected = target == i, onClick = { onTarget(i) }, label = { Text(name.substringBefore(" ")) })
         }

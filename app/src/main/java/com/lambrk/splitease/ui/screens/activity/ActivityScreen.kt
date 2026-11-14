@@ -1,5 +1,7 @@
 package com.lambrk.splitease.ui.screens.activity
 
+import com.lambrk.splitease.ui.i18n.tr
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -22,7 +24,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import com.lambrk.splitease.ui.i18n.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -76,7 +78,7 @@ internal fun ActivityScreen(model: SplitEaseViewModel) {
                 }
                 if (unread > 0) {
                     TextButton(onClick = model::markAllNotificationsRead, enabled = !model.busy) {
-                        Text("Mark all as read")
+                        Text(tr("Mark all as read"))
                     }
                 }
             }
@@ -94,9 +96,9 @@ internal fun ActivityScreen(model: SplitEaseViewModel) {
                         modifier = Modifier.size(32.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Text("No activity yet", style = MaterialTheme.typography.titleMedium)
+                    Text(tr("No activity yet"), style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "Group and friend updates will appear here.",
+                        tr("Updates about your Splits and friends will appear here."),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

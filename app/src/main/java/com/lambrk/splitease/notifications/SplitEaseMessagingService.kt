@@ -44,7 +44,7 @@ class SplitEaseMessagingService : FirebaseMessagingService() {
             manager.createNotificationChannel(
                 NotificationChannel(
                     "group_updates",
-                    "Group updates",
+                    "Splits updates",
                     NotificationManager.IMPORTANCE_DEFAULT,
                 )
             )
@@ -66,7 +66,7 @@ class SplitEaseMessagingService : FirebaseMessagingService() {
             NotificationCompat.Builder(this, "group_updates")
                 .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle(message.data["title"] ?: "SplitEase update")
-                .setContentText(message.data["message"] ?: "There's a new update in your groups.")
+                .setContentText(message.data["message"] ?: "There's a new update in your Splits.")
                 .setContentIntent(tap)
                 .setAutoCancel(true)
                 .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)

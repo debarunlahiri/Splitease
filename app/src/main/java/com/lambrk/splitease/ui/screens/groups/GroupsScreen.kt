@@ -1,5 +1,7 @@
 package com.lambrk.splitease.ui.screens.groups
 
+import com.lambrk.splitease.ui.i18n.tr
+
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -21,7 +23,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import com.lambrk.splitease.ui.i18n.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -70,13 +72,13 @@ internal fun GroupsScreen(model: SplitEaseViewModel) {
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Text(
-                        "Groups",
+                        "Splits",
                         style = MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.SemiBold,
                     )
                     if (groupCount > 0) {
                         Text(
-                            if (groupCount == 1) "1 group" else "$groupCount groups",
+                            "$groupCount in total",
                             style = MaterialTheme.typography.bodyMedium,
                             color = colors.onSurfaceVariant,
                         )
@@ -106,7 +108,7 @@ internal fun GroupsScreen(model: SplitEaseViewModel) {
                         ) {
                             Icon(Icons.Rounded.MailOutline, contentDescription = null, tint = colors.primary)
                             Text(
-                                invitation.optionalText("groupName").ifBlank { "Group invitation" },
+                                invitation.optionalText("groupName").ifBlank { "Invitation to Splits" },
                                 style = MaterialTheme.typography.titleMedium,
                             )
                         }
@@ -139,12 +141,12 @@ internal fun GroupsScreen(model: SplitEaseViewModel) {
                     Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                             Column(Modifier.weight(1f)) {
-                                Text("Still to collect", style = MaterialTheme.typography.bodySmall)
+                                Text(tr("Still to receive"), style = MaterialTheme.typography.bodySmall)
                                 if (toCollect.isEmpty()) Text("Nothing", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                                 toCollect.forEach { (c, a) -> Text(money(a, c), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
                             }
                             Column(Modifier.weight(1f)) {
-                                Text("You still owe", style = MaterialTheme.typography.bodySmall)
+                                Text(tr("You still owe"), style = MaterialTheme.typography.bodySmall)
                                 if (toPay.isEmpty()) Text("Nothing", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                                 toPay.forEach { (c, a) -> Text(money(a, c), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
                             }
@@ -154,7 +156,7 @@ internal fun GroupsScreen(model: SplitEaseViewModel) {
                             modifier = Modifier.fillMaxWidth(),
                         )
                         Text(
-                            "$overallSettled of $overallTotal payments settled",
+                            "$overallSettled of $overallTotal payments paid",
                             style = MaterialTheme.typography.bodySmall,
                             color = colors.onSurfaceVariant,
                         )
@@ -163,7 +165,7 @@ internal fun GroupsScreen(model: SplitEaseViewModel) {
             }
         }
         item(key = "groups-list-heading") {
-            SectionTitle("Your groups", modifier = Modifier.padding(top = 24.dp, bottom = 8.dp))
+            SectionTitle(tr("Your Splits"), modifier = Modifier.padding(top = 24.dp, bottom = 8.dp))
         }
         if (model.groups.isEmpty() && !model.busy) {
             item(key = "groups-empty") {
@@ -178,9 +180,9 @@ internal fun GroupsScreen(model: SplitEaseViewModel) {
                         modifier = Modifier.size(32.dp),
                         tint = colors.onSurfaceVariant,
                     )
-                    Text("No groups yet", style = MaterialTheme.typography.titleMedium)
+                    Text(tr("No Splits yet"), style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "Create a group to start sharing expenses.",
+                        tr("Create Splits to start sharing costs with friends."),
                         style = MaterialTheme.typography.bodyMedium,
                         color = colors.onSurfaceVariant,
                     )
@@ -212,7 +214,7 @@ internal fun GroupsScreen(model: SplitEaseViewModel) {
                             )
                             val left = totals(p.optJSONArray("pending"))
                             Text(
-                                "${p.optInt("settled")}/${p.optInt("total")} settled" +
+                                "${p.optInt("settled")}/${p.optInt("total")} paid" +
                                     if (left.isEmpty()) " · All paid" else " · ${left.joinToString(" + ") { money(it.second, it.first) }} pending",
                                 style = MaterialTheme.typography.bodySmall,
                             )

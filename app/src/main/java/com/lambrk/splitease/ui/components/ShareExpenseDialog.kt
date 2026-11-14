@@ -1,5 +1,8 @@
 package com.lambrk.splitease.ui.components
 
+import com.lambrk.splitease.ui.util.Messages
+import com.lambrk.splitease.ui.i18n.tr
+
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
@@ -25,7 +28,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import com.lambrk.splitease.ui.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -42,6 +45,7 @@ import com.lambrk.splitease.data.objects
 import com.lambrk.splitease.ui.SplitEaseViewModel
 import com.lambrk.splitease.ui.util.memberName
 import com.lambrk.splitease.ui.util.money
+import com.lambrk.splitease.ui.util.friendlyDate
 import com.lambrk.splitease.ui.util.optionalText
 import com.lambrk.splitease.ui.util.payPayload
 import java.math.BigDecimal
@@ -89,6 +93,11 @@ internal fun ShareExpenseDialog(model: SplitEaseViewModel, expense: JSONObject, 
     val iAmPayer = payerId == model.userId
     val nameToId = expense.optJSONArray("shares")?.objects().orEmpty()
         .associate { memberName(it.getString("userId"), model).substringBefore(" (") to it.getString("userId") }
+    // Contacts added by phone have no account: they can't get in-app or email reminders.
+    val pendingIds = model.selected?.optJSONArray("members")?.objects().orEmpty()
+        .filter { it.optBoolean("pending") }.map { it.optString("userId") }.toSet()
+    val canRemind = (target?.let { i -> owing.getOrNull(i)?.first?.let { nameToId[it] }?.let { it !in pendingIds } }
+        ?: owing.any { (name, _) -> nameToId[name] !in pendingIds })
     val dues = expense.optJSONArray("shares")?.objects().orEmpty()
         .filter { it.optionalText("dueDate").isNotBlank() }
         .associate { memberName(it.getString("userId"), model).substringBefore(" (") to it.optionalText("dueDate").take(10) }
@@ -101,22 +110,30 @@ internal fun ShareExpenseDialog(model: SplitEaseViewModel, expense: JSONObject, 
             userIds = nameToId,
         ))
     }
-    val groupMessage = buildString {
-        append("$description · ${money(expense.optString("amount"), currency)}\n")
-        owing.forEach { (name, amount) -> append("$name owes ${money(amount, currency)}\n") }
-        append("Paid by $payerName")
-        if (payerUpi.isNotBlank() && currency == "INR") append(" · UPI $payerUpi")
-        link?.let { append("\nPay / details: $it") }
-    }
+    // WhatsApp shows *text* in bold, so the title and the amounts stand out in a busy group chat.
+    val upiForMessage = payerUpi.takeIf { it.isNotBlank() && currency == "INR" }
+    val groupMessage = Messages.groupSplit(
+        title = description,
+        total = money(expense.optString("amount"), currency),
+        paidBy = payerName,
+        owes = owing.map { (name, amount) -> name to money(amount, currency) },
+        payBy = payBy?.let { friendlyDate(it) },
+        link = link,
+        upiId = upiForMessage,
+    )
     // A link for one person opens straight to their share.
     val targetLink = link?.let { if (target != null) "$it?p=$target" else it }
     val message = target?.let { i ->
         owing.getOrNull(i)?.let { (name, amount) ->
-            buildString {
-                append("Hi ${name.substringBefore(" ")}, your share for \"$description\" is ${money(amount, currency)}.")
-                if (payerUpi.isNotBlank() && currency == "INR") append(" Pay $payerName on UPI: $payerUpi.")
-                targetLink?.let { append("\nPay here: $it") }
-            }
+            Messages.personalShare(
+                to = name,
+                title = description,
+                amount = money(amount, currency),
+                paidBy = payerName,
+                payBy = payBy?.let { friendlyDate(it) },
+                link = targetLink,
+                upiId = upiForMessage,
+            )
         }
     } ?: groupMessage
     fun send(text: String, title: String, whatsapp: Boolean = false) {
@@ -150,7 +167,7 @@ internal fun ShareExpenseDialog(model: SplitEaseViewModel, expense: JSONObject, 
         ) {
             Text("Share \"$description\"", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             if (owing.isEmpty()) {
-                Text("Everyone has paid for this expense.", color = MaterialTheme.colorScheme.primary)
+                Text(tr("Everyone has paid for this split."), color = MaterialTheme.colorScheme.primary)
             }
             SendToChips(owing.map { it.first }, target) { target = it }
             if (currency == "INR" && payerUpi.isNotBlank() && owing.isNotEmpty()) {
@@ -171,7 +188,7 @@ internal fun ShareExpenseDialog(model: SplitEaseViewModel, expense: JSONObject, 
                 context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Split", message))
                 model.message = "Copied"
             }
-            if (iAmPayer && owing.isNotEmpty()) {
+            if (iAmPayer && owing.isNotEmpty() && canRemind) {
                 ShareOption(Icons.Rounded.Notifications, "Remind in the app", "Notify everyone who hasn't paid", enabled = !model.busy) {
                     model.nudgeUnpaid(expense, null, push = true, email = false)
                     onDismiss()

@@ -1,5 +1,7 @@
 package com.lambrk.splitease.ui.forms
 
+import com.lambrk.splitease.ui.i18n.tr
+
 import android.content.Intent
 import android.Manifest
 import android.content.pm.PackageManager
@@ -34,7 +36,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Text
+import com.lambrk.splitease.ui.i18n.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -97,7 +99,7 @@ internal fun InviteMemberSheet(model: SplitEaseViewModel, dismiss: () -> Unit) {
     fun sendInvites() {
         val chosen = picked.values.toList()
         val emails = chosen.mapNotNull { it.email }
-        val phones = chosen.filter { it.email == null }.mapNotNull { it.phone }
+        val phones = chosen.filter { it.email == null }.mapNotNull { p -> p.phone?.let { com.lambrk.splitease.ui.util.withCountryCode(it, context) ?: it } }
         fun smsLink() {
             if (phones.isEmpty()) return
             model.shareInvite { text ->
@@ -117,21 +119,21 @@ internal fun InviteMemberSheet(model: SplitEaseViewModel, dismiss: () -> Unit) {
     }
 
     FormScreen(
-        title = "Invite to group",
+        title = tr("Invite to Splits"),
         model = model,
         dismiss = dismiss,
         submitLabel = if (picked.isEmpty()) "Pick people to invite" else "Invite ${picked.size} ${if (picked.size == 1) "person" else "people"}",
         submitEnabled = picked.isNotEmpty(),
         onSubmit = ::sendInvites,
         steps = listOf(
-            FormStep("Invite your people", "Pick people from your contacts, or share a link.") {
+            FormStep(tr("Invite your people"), tr("Pick people from your contacts, or share a link.")) {
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     leadingIcon = { Icon(Icons.Rounded.Search, null) },
-                    placeholder = { Text("Search contacts or type an email") },
+                    placeholder = { Text(tr("Search contacts or type an email")) },
                     shape = RoundedCornerShape(18.dp),
                 )
                 if (picked.isNotEmpty()) {
@@ -168,17 +170,17 @@ internal fun InviteMemberSheet(model: SplitEaseViewModel, dismiss: () -> Unit) {
                                     type = "text/plain"
                                     putExtra(Intent.EXTRA_TEXT, invitation)
                                 }
-                                context.startActivity(Intent.createChooser(intent, "Share group invitation"))
+                                context.startActivity(Intent.createChooser(intent, "Share invite link"))
                             }
                         },
                     ) {
                         Icon(Icons.Rounded.Share, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
-                        Text("Share link")
+                        Text(tr("Share link"))
                     }
                 }
                 Text(
-                    "Invite links are valid for 7 days. People with an email get an invitation; people with only a phone number get the link by message.",
+                    tr("Invite links are valid for 7 days. People with an email get an invitation; people with only a phone number get the link by message."),
                     style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
                     color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -188,10 +190,10 @@ internal fun InviteMemberSheet(model: SplitEaseViewModel, dismiss: () -> Unit) {
                 }
                 if (!contactsAllowed) {
                     Text(
-                        "Allow access to your contacts to invite people straight from your phone book. Contacts stay on your phone.",
+                        tr("Allow access to your contacts to invite people straight from your phone book. Contacts stay on your phone."),
                         style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
                     )
-                    OutlinedButton(onClick = { permission.launch(Manifest.permission.READ_CONTACTS) }) { Text("Show my contacts") }
+                    OutlinedButton(onClick = { permission.launch(Manifest.permission.READ_CONTACTS) }) { Text(tr("Show my contacts")) }
                 } else {
                     shown.forEach { contact ->
                         PersonRow(
@@ -205,7 +207,7 @@ internal fun InviteMemberSheet(model: SplitEaseViewModel, dismiss: () -> Unit) {
                         ) { toggle(contact) }
                     }
                     if (contacts != null && shown.isEmpty() && typedEmail == null) {
-                        Text("No contacts found.", color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(tr("No contacts found."), color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             },
@@ -243,17 +245,17 @@ private fun GroupFriendPicker(
 
     AlertDialog(
         onDismissRequest = { if (!model.busy) onDismiss() },
-        title = { Text("Invite from Friends") },
+        title = { Text(tr("Invite from Friends")) },
         text = {
             if (available.isEmpty()) {
                 when {
                     model.friendsLoading -> LinearProgressIndicator(Modifier.fillMaxWidth())
-                    model.friendsLoadFailed -> Text("Couldn’t load your friends. Try again.")
-                    else -> Text("No friends are available to invite to this group.")
+                    model.friendsLoadFailed -> Text(tr("Couldn’t load your friends. Try again."))
+                    else -> Text(tr("None of your friends are left to invite."))
                 }
             } else {
                 LazyColumn(modifier = Modifier.heightIn(max = 320.dp)) {
-                    item { Text("Select up to 20 friends to invite.") }
+                    item { Text(tr("Select up to 20 friends to invite.")) }
                     items(available, key = { it.getString("id") }) { friend ->
                         val id = friend.getString("id")
                         val checked = id in selectedIds
@@ -287,7 +289,7 @@ private fun GroupFriendPicker(
                 TextButton(
                     onClick = { model.inviteGroupFriends(selectedIds, onSent) },
                     enabled = selectedIds.isNotEmpty() && !model.busy && !model.friendsLoading,
-                ) { Text("Send invitations") }
+                ) { Text(tr("Send invitations")) }
             }
         },
         dismissButton = {

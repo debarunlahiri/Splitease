@@ -33,7 +33,8 @@ internal suspend fun loadDeviceContacts(context: Context): List<DeviceContact> =
             while (it.moveToNext()) {
                 val id = it.getString(0) ?: continue
                 names.putIfAbsent(id, it.getString(1).orEmpty())
-                it.getString(2)?.takeIf { n -> n.isNotBlank() }?.let { n -> phones.putIfAbsent(id, n) }
+                it.getString(2)?.takeIf { n -> n.isNotBlank() }
+                    ?.let { n -> phones.putIfAbsent(id, n) }
             }
         }
         resolver.query(
@@ -53,6 +54,11 @@ internal suspend fun loadDeviceContacts(context: Context): List<DeviceContact> =
             }
         }
         names.map { (id, name) ->
-            DeviceContact(id, name.ifBlank { emails[id] ?: phones[id].orEmpty() }, phones[id], emails[id])
+            DeviceContact(
+                id,
+                name.ifBlank { emails[id] ?: phones[id].orEmpty() },
+                phones[id],
+                emails[id]
+            )
         }.filter { it.name.isNotBlank() }.sortedBy { it.name.lowercase(Locale.ROOT) }
     }

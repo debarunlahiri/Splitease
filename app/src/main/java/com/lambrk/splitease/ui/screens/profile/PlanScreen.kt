@@ -2,6 +2,8 @@
 
 package com.lambrk.splitease.ui.screens.profile
 
+import com.lambrk.splitease.ui.i18n.tr
+
 import com.lambrk.splitease.ui.util.friendlyDate
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -17,7 +19,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import com.lambrk.splitease.ui.i18n.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -71,11 +73,11 @@ internal fun PlanScreen(model: SplitEaseViewModel, onBack: () -> Unit) {
             contentPadding = PaddingValues(24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            item { SectionTitle("Current plan") }
+            item { SectionTitle(tr("Current plan")) }
             item {
                 Panel {
                     if (entitlement == null) {
-                        Text("Your plan details are unavailable.")
+                        Text(tr("Your plan details are unavailable."))
                     } else {
                         val name = plans?.firstOrNull { it.optString("code") == activeCode }
                             ?.optString("name") ?: planName(activeCode.orEmpty())
@@ -86,23 +88,23 @@ internal fun PlanScreen(model: SplitEaseViewModel, onBack: () -> Unit) {
                     }
                 }
             }
-            item { SectionTitle("Plan options") }
+            item { SectionTitle(tr("Plan options")) }
             val catalog = plans
             when {
                 loadFailed -> item {
                     Panel {
-                        Text("Couldn’t load plan options.")
+                        Text(tr("Couldn’t load plan options."))
                         TextButton(onClick = { request++ }) { Text("Retry") }
                     }
                 }
                 catalog == null -> item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
-                catalog.isEmpty() -> item { Text("No other plans are available.") }
+                catalog.isEmpty() -> item { Text(tr("No other plans are available.")) }
                 else -> items(catalog, key = { it.getString("code") }) { plan ->
                     Panel {
                         Text(plan.getString("name"), style = MaterialTheme.typography.titleMedium)
                         val price = money(plan.getString("price"), plan.getString("currency"))
                         Text("$price for ${plan.getInt("durationDays")} days")
-                        if (plan.optBoolean("removesAds")) Text("No ads")
+                        if (plan.optBoolean("removesAds")) Text(tr("No ads"))
                     }
                 }
             }

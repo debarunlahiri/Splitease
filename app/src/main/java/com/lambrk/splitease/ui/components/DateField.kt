@@ -1,5 +1,7 @@
 package com.lambrk.splitease.ui.components
 
+import com.lambrk.splitease.ui.i18n.tr
+
 import com.lambrk.splitease.ui.util.friendlyDate
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -12,7 +14,7 @@ import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
+import com.lambrk.splitease.ui.i18n.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
@@ -46,7 +48,7 @@ internal fun DateField(
             onValueChange = {},
             readOnly = true,
             label = { Text(label) },
-            trailingIcon = { Icon(Icons.Rounded.DateRange, contentDescription = "Choose date") },
+            trailingIcon = { Icon(Icons.Rounded.DateRange, contentDescription = tr("Choose date")) },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
             enabled = enabled,

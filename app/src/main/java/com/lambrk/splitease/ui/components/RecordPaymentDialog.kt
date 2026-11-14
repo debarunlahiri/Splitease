@@ -1,7 +1,9 @@
 package com.lambrk.splitease.ui.components
 
+import com.lambrk.splitease.ui.i18n.tr
+
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Text
+import com.lambrk.splitease.ui.i18n.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import com.lambrk.splitease.ui.util.money
@@ -16,10 +18,10 @@ internal fun RecordPaymentDialog(
 ) {
     AlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
-        title = { Text("Record this payment?") },
+        title = { Text(tr("Mark this as paid?")) },
         text = {
             Text(
-                "Confirm you have paid ${money(suggestion.getString("amount"), suggestion.getString("currency"))}. This records the payment for your group; no money is transferred."
+                "Confirm that you paid ${money(suggestion.getString("amount"), suggestion.getString("currency"))}. This only marks it as paid; no money is sent."
             )
         },
         confirmButton = {
@@ -30,7 +32,7 @@ internal fun RecordPaymentDialog(
                     onDismiss()
                 },
             ) {
-                Text("Record payment")
+                Text(tr("Yes, I paid"))
             }
         },
         dismissButton = { TextButton(onClick = { onDismiss() }) { Text("Cancel") } },

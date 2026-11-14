@@ -28,10 +28,10 @@ object UserFacingError {
             is UserInputException -> failure.userMessage
             is ApiException -> apiMessage(failure.status)
             is FirebaseNetworkException,
-            is IOException -> "Unable to connect. Check your connection and try again."
+            is IOException -> "Can't reach SplitEase. Check your internet and try again."
             is GetCredentialException,
             is FirebaseAuthException,
-            is GoogleApiException -> "We couldn't sign you in. Please try again."
+            is GoogleApiException -> "Couldn't sign you in. Please try again."
             else -> "Something went wrong. Please try again."
         }
     }
@@ -39,16 +39,16 @@ object UserFacingError {
     private fun apiMessage(status: Int): String =
         when (status) {
             400,
-            422 -> "Please check your details and try again."
-            401 -> "Please sign in again to continue."
-            403 -> "You don't have permission to do that."
-            404 -> "This item is no longer available. Please refresh."
+            422 -> "Something doesn't look right. Please check what you entered and try again."
+            401 -> "Your session has ended. Please sign in again."
+            403 -> "You can't do that here. Ask the person who created it to help."
+            404 -> "We couldn't find that. It may have been removed, so try refreshing."
             408,
-            504 -> "This is taking longer than expected. Please try again."
-            409 -> "We couldn't complete this action. Please refresh and try again."
-            429 -> "Too many attempts. Please wait a moment and try again."
-            in 500..599 -> "This service is temporarily unavailable. Please try again later."
-            else -> "We couldn't complete this action. Please try again."
+            504 -> "That's taking a while. Check your internet and try again."
+            409 -> "This changed while you were looking. Refresh and try again."
+            429 -> "You're going a little fast. Wait a moment and try again."
+            in 500..599 -> "Something went wrong on our side. Please try again in a few minutes."
+            else -> "Something went wrong. Please try again."
         }
 
     private fun isSignInCancellation(failure: Throwable): Boolean {

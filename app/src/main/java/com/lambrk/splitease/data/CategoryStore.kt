@@ -7,7 +7,8 @@ import android.content.Context
  * separately for each account so a shared phone does not mix them up.
  */
 class CategoryStore(context: Context) {
-    private val preferences = context.getSharedPreferences("expense_categories", Context.MODE_PRIVATE)
+    private val preferences =
+        context.getSharedPreferences("expense_categories", Context.MODE_PRIVATE)
 
     private fun key(userId: String) = "categories:$userId"
 

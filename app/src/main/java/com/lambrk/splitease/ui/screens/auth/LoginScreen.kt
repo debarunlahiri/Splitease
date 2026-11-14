@@ -1,5 +1,9 @@
 package com.lambrk.splitease.ui.screens.auth
 
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import com.lambrk.splitease.ui.i18n.tr
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,7 +31,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SuggestionChip
-import androidx.compose.material3.Text
+import com.lambrk.splitease.ui.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,7 +50,7 @@ internal fun LoginScreen(busy: Boolean, login: () -> Unit) {
     ) {
         Heading(
             title = "SplitEase",
-            subtitle = "Good times start together.",
+            subtitle = tr("Good times start together."),
             label = "WELCOME",
         )
         Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
@@ -79,25 +83,25 @@ internal fun LoginScreen(busy: Boolean, login: () -> Unit) {
                 }
             }
             Text(
-                "Good times.\nShared fairly.",
+                tr("Good times.\nShared fairly."),
                 style = MaterialTheme.typography.displayMedium,
                 fontWeight = FontWeight.Bold,
                 lineHeight = 52.sp,
             )
             Text(
-                "Trips, rent, dinner and everything in between. Keep shared expenses simple, so you can enjoy the moment.",
+                tr("Trips, rent, dinner and everything in between. Split costs with friends the easy way, so you can enjoy the moment."),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 SuggestionChip(
                     onClick = {},
-                    label = { Text("Split together") },
+                    label = { Text(tr("Split together")) },
                     icon = { Icon(Icons.Rounded.Groups, null, Modifier.size(18.dp)) },
                 )
                 SuggestionChip(
                     onClick = {},
-                    label = { Text("Settle easily") },
+                    label = { Text(tr("Pay back easily")) },
                     icon = { Icon(Icons.Rounded.DoneAll, null, Modifier.size(18.dp)) },
                 )
             }
@@ -114,13 +118,18 @@ internal fun LoginScreen(busy: Boolean, login: () -> Unit) {
             ) {
                 Icon(Icons.Rounded.AccountCircle, null)
                 Spacer(Modifier.width(12.dp))
-                Text("Continue with Google", fontSize = 16.sp)
+                Text(tr("Continue with Google"), fontSize = 16.sp)
             }
             Text(
-                "Your plans. Your people. All balanced.",
+                tr("Your plans. Your people. All sorted."),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            var showPrivacy by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+            androidx.compose.material3.TextButton(onClick = { showPrivacy = true }) {
+                Text("By continuing you agree to our Privacy policy", style = MaterialTheme.typography.bodySmall, textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline)
+            }
+            if (showPrivacy) com.lambrk.splitease.ui.components.PrivacyPolicyDialog { showPrivacy = false }
         }
     }
 }

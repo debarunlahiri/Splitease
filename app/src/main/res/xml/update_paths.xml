@@ -2,4 +2,6 @@
 <paths>
     <!-- Downloaded updates live in cache/updates/ -->
     <cache-path name="updates" path="updates/" />
+    <!-- Receipt photos taken with the camera, only while they are being read -->
+    <cache-path name="scans" path="scans/" />
 </paths>

@@ -1,5 +1,18 @@
 package com.lambrk.splitease.ui.screens.groups
 
+import androidx.compose.runtime.Composable
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Repeat
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.draw.clip
+import com.lambrk.splitease.ui.i18n.tr
+
 import com.lambrk.splitease.ui.util.friendlyDate
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -22,7 +35,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import com.lambrk.splitease.ui.i18n.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -84,7 +97,7 @@ private fun myStatus(expense: JSONObject, me: String, model: SplitEaseViewModel)
         val total = owing.fold(zero()) { a, b -> a + left(b) }
         return if (owing.isEmpty()) MyStatus("Everyone paid you back", Tone.Good, zero(), zero())
         else MyStatus(
-            "${money(total.toPlainString(), currency)} still to collect · ${others.size - owing.size} of ${others.size} paid",
+            "${money(total.toPlainString(), currency)} still to receive · ${others.size - owing.size} of ${others.size} paid",
             Tone.Pending,
             total,
             zero(),
@@ -108,6 +121,7 @@ internal fun LazyListScope.GroupExpensesContent(
     onEdit: (JSONObject) -> Unit,
     onDraft: (String) -> Unit,
 ) {
+    item(key = "repeating-splits") { RepeatingSplits(model) }
     val drafts = model.groupDrafts
     items(drafts, key = { it.snapshotKey }) { draft ->
         val fields = JSONObject(draft.json)
@@ -122,9 +136,9 @@ internal fun LazyListScope.GroupExpensesContent(
             ListItem(
                 leadingContent = { Icon(Icons.Rounded.EditNote, contentDescription = null) },
                 headlineContent = {
-                    Text(fields.optString("description").ifBlank { "Untitled expense" })
+                    Text(fields.optString("description").ifBlank { "Untitled split" })
                 },
-                supportingContent = { Text("Draft · Not submitted") },
+                supportingContent = { Text(tr("Draft · Not submitted")) },
                 trailingContent = {
                     val amount = fields.optString("amount")
                     if (amount.isNotBlank()) Text(money(amount, fields.optString("currency")))
@@ -161,7 +175,7 @@ internal fun LazyListScope.GroupExpensesContent(
                                     fontWeight = FontWeight.SemiBold,
                                 )
                                 Text(
-                                    (if (list.size == 1) "For ${list.first().optString("description")}. " else "Across ${list.size} expenses. ") +
+                                    (if (list.size == 1) "For ${list.first().optString("description")}. " else "Across ${list.size} splits. ") +
                                         "Check your bank or UPI app to see if it arrived.",
                                     style = MaterialTheme.typography.bodySmall,
                                 )
@@ -170,7 +184,7 @@ internal fun LazyListScope.GroupExpensesContent(
                                         onClick = { model.resolveClaims(list.map { it.getString("id") }, false) },
                                         enabled = !model.busy,
                                         modifier = Modifier.weight(1f),
-                                    ) { Text("Not received") }
+                                    ) { Text(tr("Not received")) }
                                     androidx.compose.material3.Button(
                                         onClick = { model.resolveClaims(list.map { it.getString("id") }, true) },
                                         enabled = !model.busy,
@@ -204,35 +218,42 @@ internal fun LazyListScope.GroupExpensesContent(
             if (collecting && group != null) {
                 com.lambrk.splitease.ui.components.CollectAllSheet(model, group.optString("name"), currency, perPersonNamed, names) { collecting = false }
             }
-            Surface(shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
-                if (owedToMe.isEmpty() && iOwe.isEmpty()) {
-                    Text(
-                        "Everything in this group is settled up",
+            val scheme = MaterialTheme.colorScheme
+            if (owedToMe.isEmpty() && iOwe.isEmpty()) {
+                Surface(shape = RoundedCornerShape(22.dp), color = scheme.surfaceContainer) {
+                    Row(
                         Modifier.fillMaxWidth().padding(18.dp),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                } else Column {
-                    Row(Modifier.fillMaxWidth().padding(18.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        Column(Modifier.weight(1f)) {
-                            Text("You're owed", style = MaterialTheme.typography.bodySmall)
-                            if (owedToMe.isEmpty()) Text("—", style = MaterialTheme.typography.titleLarge)
-                            owedToMe.forEach { (c, a) -> Text(money(a.toPlainString(), c), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
-                        }
-                        Column(Modifier.weight(1f)) {
-                            Text("You owe", style = MaterialTheme.typography.bodySmall)
-                            if (iOwe.isEmpty()) Text("—", style = MaterialTheme.typography.titleLarge)
-                            iOwe.forEach { (c, a) -> Text(money(a.toPlainString(), c), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Icon(Icons.Rounded.Check, null, tint = scheme.primary)
+                        Text(tr("Everything here is paid up"), style = MaterialTheme.typography.titleMedium, color = scheme.primary)
+                    }
+                }
+            } else Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    @Composable
+                    fun Tile(label: String, map: Map<String, java.math.BigDecimal>, container: androidx.compose.ui.graphics.Color, content: androidx.compose.ui.graphics.Color, modifier: Modifier) {
+                        Surface(modifier, shape = RoundedCornerShape(20.dp), color = container, contentColor = content) {
+                            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(tr(label), style = MaterialTheme.typography.labelMedium, color = content.copy(alpha = 0.8f))
+                                if (map.isEmpty()) Text("—", style = MaterialTheme.typography.titleLarge)
+                                map.forEach { (c, a) ->
+                                    Text(money(a.toPlainString(), c), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                                }
+                            }
                         }
                     }
-                    if (perPerson.isNotEmpty()) {
-                        androidx.compose.material3.Button(
-                            onClick = { collecting = true },
-                            modifier = Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, bottom = 16.dp),
-                        ) {
-                            Icon(Icons.Rounded.Share, null, Modifier.size(18.dp))
-                            Text("Collect all · QR, link", Modifier.padding(start = 8.dp))
-                        }
+                    Tile("You get back", owedToMe, scheme.primaryContainer.copy(alpha = 0.55f), scheme.onPrimaryContainer, Modifier.weight(1f))
+                    Tile("You owe", iOwe, if (iOwe.isEmpty()) scheme.surfaceContainer else scheme.errorContainer.copy(alpha = 0.55f), if (iOwe.isEmpty()) scheme.onSurface else scheme.onErrorContainer, Modifier.weight(1f))
+                }
+                if (perPerson.isNotEmpty()) {
+                    androidx.compose.material3.Button(
+                        onClick = { collecting = true },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Rounded.Share, null, Modifier.size(18.dp))
+                        Text(tr("Ask everyone to pay · QR, link"), Modifier.padding(start = 8.dp))
                     }
                 }
             }
@@ -243,7 +264,7 @@ internal fun LazyListScope.GroupExpensesContent(
             EmptyState(
                 Icons.Rounded.ReceiptLong,
                 "A fresh start",
-                "Add your first shared expense. We'll take care of the split.",
+                "Add your first split. We'll work out who owes what.",
             )
         }
     items(model.expenses, key = { it.getString("id") }) { expense ->
@@ -257,9 +278,24 @@ internal fun LazyListScope.GroupExpensesContent(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
         ) {
             Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        shape = androidx.compose.foundation.shape.CircleShape,
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier.size(46.dp),
+                    ) {
+                        androidx.compose.foundation.layout.Box(contentAlignment = Alignment.Center) {
+                            Icon(Icons.Rounded.ReceiptLong, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                        }
+                    }
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(expense.getString("description"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            expense.getString("description"),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        )
                         Text(
                             listOf(friendlyDate(expense.getString("expenseDate")), category.takeIf { it.isNotBlank() && it != "Other" && it != "General" })
                                 .filterNotNull().joinToString(" · "),
@@ -277,9 +313,9 @@ internal fun LazyListScope.GroupExpensesContent(
                 if (syncState in listOf("PENDING", "FAILED", "AUTH_REQUIRED")) {
                     Text(
                         when (syncState) {
-                            "FAILED" -> "Couldn't sync. Your expense is still saved."
-                            "AUTH_REQUIRED" -> "Sign in again to sync"
-                            else -> "Waiting to sync"
+                            "FAILED" -> "Couldn't save online. Your split is still on this phone."
+                            "AUTH_REQUIRED" -> "Sign in again to save online"
+                            else -> "Waiting to save online"
                         },
                         style = MaterialTheme.typography.labelMedium,
                         color = if (syncState == "FAILED") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
@@ -288,7 +324,7 @@ internal fun LazyListScope.GroupExpensesContent(
                         TextButton(
                             onClick = { model.retryExpense(expense.getString("_operationId")) },
                             enabled = !model.busy,
-                        ) { Text("Retry sync") }
+                        ) { Text(tr("Try again")) }
                 }
                 if (status != null) {
                     val context = androidx.compose.ui.platform.LocalContext.current
@@ -303,19 +339,36 @@ internal fun LazyListScope.GroupExpensesContent(
                             Tone.Neutral -> MaterialTheme.colorScheme.surfaceContainerHighest
                         },
                     ) {
-                        Text(
-                            (if (good) "✓ " else "") + status.text,
+                        Row(
                             Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                            style = MaterialTheme.typography.labelLarge,
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Icon(
+                                if (good) Icons.Rounded.Check else Icons.Rounded.Schedule,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Text(status.text, style = MaterialTheme.typography.labelLarge)
+                        }
+                    }
+                    val progress = collection(expense)
+                    if (progress != null && status.owedToMe.signum() > 0) {
+                        LinearProgressIndicator(
+                            progress = { progress.settled.toFloat() / progress.total },
+                            modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
+                            trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            gapSize = 0.dp,
+                            drawStopIndicator = {},
                         )
                     }
                     if (!expense.optString("id").startsWith("local:")) {
-                        androidx.compose.material3.OutlinedButton(
+                        androidx.compose.material3.FilledTonalButton(
                             onClick = { sharing = true },
                             modifier = Modifier.fillMaxWidth(),
                         ) {
                             Icon(Icons.Rounded.Share, null, Modifier.size(18.dp))
-                            Text("Share · QR, link, reminder", Modifier.padding(start = 8.dp))
+                            Text(tr("Share · QR, link, reminder"), Modifier.padding(start = 8.dp))
                         }
                     }
                     val expenseId = expense.getString("id")
@@ -330,13 +383,13 @@ internal fun LazyListScope.GroupExpensesContent(
                                         "${claim.optString("userName").substringBefore(" (")} says they paid ${money(claim.optString("amount"), claim.optString("currency"))}",
                                         style = MaterialTheme.typography.labelLarge,
                                     )
-                                    Text("Check your bank or UPI app to see if it arrived.", style = MaterialTheme.typography.bodySmall)
+                                    Text(tr("Check your bank or UPI app to see if it arrived."), style = MaterialTheme.typography.bodySmall)
                                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                         androidx.compose.material3.OutlinedButton(
                                             onClick = { model.resolveClaim(claim.getString("id"), false) },
                                             enabled = !model.busy,
                                             modifier = Modifier.weight(1f),
-                                        ) { Text("Not received") }
+                                        ) { Text(tr("Not received")) }
                                         androidx.compose.material3.Button(
                                             onClick = { model.resolveClaim(claim.getString("id"), true) },
                                             enabled = !model.busy,
@@ -356,7 +409,7 @@ internal fun LazyListScope.GroupExpensesContent(
                         )
                     } else if (status.iOwe.signum() > 0) {
                         androidx.compose.material3.OutlinedButton(onClick = { iPaid = true }, modifier = Modifier.fillMaxWidth()) {
-                            Text("I've paid")
+                            Text(tr("I've paid"))
                         }
                     }
                     if (iPaid) {
@@ -382,7 +435,7 @@ internal fun LazyListScope.GroupExpensesContent(
                                     status.iOwe.setScale(2).toPlainString(),
                                     expense.getString("description"),
                                 )
-                                if (!opened) model.message = "No UPI app found on this phone."
+                                if (!opened) model.message = tr("No UPI app found on this phone.")
                             },
                             modifier = Modifier.fillMaxWidth(),
                         ) { Text("Pay ${money(status.iOwe.toPlainString(), "INR")} via UPI") }
@@ -390,5 +443,83 @@ internal fun LazyListScope.GroupExpensesContent(
                 }
             }
         }
+    }
+}
+
+/** The splits that add themselves (rent, maid, bills), with a way to pause or stop each one. */
+@Composable
+private fun RepeatingSplits(model: SplitEaseViewModel) {
+    val groupId = model.selected?.optString("id")
+    androidx.compose.runtime.LaunchedEffect(groupId) { model.loadRecurring() }
+    val items = model.recurring.filter { it.optString("groupId") == groupId }
+    if (items.isEmpty()) return
+    val colors = MaterialTheme.colorScheme
+    var open by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(true) }
+    var stopping by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<JSONObject?>(null) }
+    Surface(shape = RoundedCornerShape(22.dp), color = colors.surfaceContainer) {
+        Column {
+            Row(
+                Modifier.fillMaxWidth().clickable { open = !open }.padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Icon(Icons.Rounded.Repeat, contentDescription = null, tint = colors.primary)
+                Column(Modifier.weight(1f)) {
+                    Text("Repeating splits", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "${items.count { it.optBoolean("active") }} active",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.onSurfaceVariant,
+                    )
+                }
+                Icon(if (open) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore, contentDescription = null)
+            }
+            if (open) {
+                items.forEach { r ->
+                    HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = colors.outlineVariant)
+                    val active = r.optBoolean("active")
+                    val mine = r.optString("createdBy") == model.userId
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(r.optString("description"), fontWeight = FontWeight.Medium, maxLines = 1)
+                            val every = when (r.optString("frequency")) { "WEEKLY" -> "Every week"; "YEARLY" -> "Every year"; else -> "Every month" }
+                            Text(
+                                if (active) "$every · next ${friendlyDate(r.optString("nextRunOn"))}" else "$every · paused",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = colors.onSurfaceVariant,
+                            )
+                        }
+                        Text(money(r.optString("amount"), r.optString("currency")), fontWeight = FontWeight.Bold)
+                        if (mine) {
+                            androidx.compose.material3.Switch(
+                                checked = active,
+                                onCheckedChange = { model.setRecurringActive(r.optString("id"), it) },
+                                enabled = !model.busy,
+                            )
+                            androidx.compose.material3.IconButton(onClick = { stopping = r }, enabled = !model.busy) {
+                                Icon(Icons.Rounded.Delete, contentDescription = "Stop repeating")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    stopping?.let { r ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { stopping = null },
+            title = { Text("Stop repeating?") },
+            text = { Text("Splits already added stay. No new ones will be added.") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { model.deleteRecurring(r.optString("id")); stopping = null }) {
+                    Text("Stop repeating", color = colors.error)
+                }
+            },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { stopping = null }) { Text("Keep") } },
+        )
     }
 }

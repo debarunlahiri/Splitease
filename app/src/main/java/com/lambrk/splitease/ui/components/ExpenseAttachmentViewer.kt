@@ -1,5 +1,7 @@
 package com.lambrk.splitease.ui.components
 
+import com.lambrk.splitease.ui.i18n.tr
+
 import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.Context
@@ -27,7 +29,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import com.lambrk.splitease.ui.i18n.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -177,8 +179,8 @@ private fun AttachmentImage(
         val image = file
         when {
             failed -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("This image couldn’t be previewed.")
-                TextButton(onClick = { openDocument(attachment) }) { Text("Open with another app") }
+                Text(tr("This image couldn’t be previewed."))
+                TextButton(onClick = { openDocument(attachment) }) { Text(tr("Open with another app")) }
             }
             image == null -> CircularProgressIndicator()
             else -> ZoomableAttachment(image, attachment.name, imageLoader, onError = { failed = true })

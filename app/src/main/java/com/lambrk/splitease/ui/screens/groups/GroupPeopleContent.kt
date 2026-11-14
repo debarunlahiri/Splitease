@@ -1,5 +1,14 @@
 package com.lambrk.splitease.ui.screens.groups
 
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import com.lambrk.splitease.ui.util.money
+import com.lambrk.splitease.ui.util.friendlyDate
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material.icons.rounded.PersonRemove
+import com.lambrk.splitease.ui.i18n.tr
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -20,7 +29,7 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import com.lambrk.splitease.ui.i18n.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -47,25 +56,41 @@ internal fun LazyListScope.GroupPeopleContent(
 ) {
     item {
         Text(
-            "Invite friends by link or email to join your circle.",
+            tr("Invite friends by link or email to join your circle."),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         if (group.getString("createdBy") == model.userId) {
             FilledTonalButton(enabled = !model.busy, onClick = onInvite) {
                 Icon(Icons.Rounded.PersonAdd, null)
                 Spacer(Modifier.width(8.dp))
-                Text("Invite a friend")
+                Text(tr("Invite a friend"))
             }
         }
     }
     items(group.getJSONArray("members").objects(), key = { it.getString("userId") }) { member ->
         val id = member.getString("userId")
+        val owner = group.getString("createdBy")
+        val canRemove = owner == model.userId && id != owner
         PersonCard(
             name = memberName(id, model),
             detail = member.getString("role").lowercase().replaceFirstChar { it.uppercase() },
             photoUrl = memberPhotoUrl(id, model),
+            actions = if (canRemove) {
+                {
+                    TextButton(
+                        enabled = !model.busy,
+                        onClick = { model.checkMemberRemoval(id, memberName(id, model).substringBefore(" (")) },
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                    ) {
+                        Icon(Icons.Rounded.PersonRemove, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Remove")
+                    }
+                }
+            } else null,
         )
     }
+    item(key = "member-removal") { MemberRemovalDialog(model) }
     // People who were invited by email but have not joined yet sit in the same list as the
     // members, with their status and the actions the owner can take.
     val pendingInvitations = model.groupInvitations.filter { it.optString("status") == "PENDING" }
@@ -85,7 +110,7 @@ internal fun LazyListScope.GroupPeopleContent(
             ) {
                 Icon(Icons.Rounded.Refresh, null, Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Resend invite")
+                Text(tr("Resend invite"))
             }
             TextButton(
                 enabled = !model.busy,
@@ -152,4 +177,86 @@ private fun StatusChip(text: String) {
             color = MaterialTheme.colorScheme.onSecondaryContainer,
         )
     }
+}
+
+/** Asks before removing someone; if they are already in splits, lists those splits instead of removing them. */
+@Composable
+private fun MemberRemovalDialog(model: SplitEaseViewModel) {
+    val check = model.memberCheck ?: return
+    val count = check.usage.optInt("count")
+    val canAdjust = check.usage.optBoolean("canAdjust")
+    var confirming by androidx.compose.runtime.saveable.rememberSaveable(check.id) { androidx.compose.runtime.mutableStateOf(false) }
+    if (confirming) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirming = false },
+            title = { Text("Remove ${check.name} and update the splits?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("${check.name}'s part of each split will be shared among everyone else in it, so the totals stay the same.")
+                    Text("Everyone affected gets a message, and each split's history shows the change.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { confirming = false; model.confirmRemoveMember(check.id, adjust = true) }, enabled = !model.busy) {
+                    Text("Remove and update", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { confirming = false }) { Text("Cancel") } },
+        )
+    }
+    val splits = check.usage.optJSONArray("expenses")?.objects().orEmpty()
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = { model.dismissMemberCheck() },
+        title = { Text(if (count == 0) "Remove ${check.name}?" else "${check.name} is already in ${if (count == 1) "1 split" else "$count splits"}") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (count == 0) {
+                    Text("${check.name} isn't in any split yet, so nothing changes for anyone else.")
+                } else {
+                    Text(
+                        when {
+                            canAdjust -> "You can take them out of these splits and share their part among everyone else."
+                            check.usage.optString("blockedReason") == "PAID_FOR_SPLITS" -> "${check.name} paid for some of these splits, so delete those splits first."
+                            else -> "${check.name} has already paid part of these splits, so they can't be taken out automatically."
+                        },
+                    )
+                    Column(
+                        Modifier.heightIn(max = 240.dp).verticalScroll(androidx.compose.foundation.rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        splits.forEach { e ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(e.optString("description"), fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(
+                                        friendlyDate(e.optString("expenseDate")) + if (e.optBoolean("paidByThem")) " · paid by them" else "",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                Text(money(e.optString("amount"), e.optString("currency")), fontWeight = FontWeight.Bold)
+                            }
+                        }
+                        if (count > splits.size) Text("and ${count - splits.size} more", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            if (count == 0) {
+                TextButton(onClick = { model.confirmRemoveMember(check.id) }, enabled = !model.busy) {
+                    Text("Remove", color = MaterialTheme.colorScheme.error)
+                }
+            } else if (canAdjust) {
+                TextButton(onClick = { confirming = true }, enabled = !model.busy) {
+                    Text("Remove and update splits", color = MaterialTheme.colorScheme.error)
+                }
+            } else {
+                TextButton(onClick = { model.dismissMemberCheck() }) { Text("Got it") }
+            }
+        },
+        dismissButton = if (count == 0 || canAdjust) {
+            { TextButton(onClick = { model.dismissMemberCheck() }) { Text(if (count == 0) "Cancel" else "Not now") } }
+        } else null,
+    )
 }

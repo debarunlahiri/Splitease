@@ -1,8 +1,10 @@
 package com.lambrk.splitease.ui.components
 
+import com.lambrk.splitease.ui.i18n.tr
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Text
+import com.lambrk.splitease.ui.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -17,6 +19,6 @@ internal fun SessionRestoringScreen() {
     ) {
         CircularProgressIndicator()
         Spacer(Modifier.height(16.dp))
-        Text("Getting things ready…")
+        Text(tr("Getting things ready…"))
     }
 }

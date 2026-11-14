@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
@@ -25,9 +27,12 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import com.lambrk.splitease.ui.i18n.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -62,15 +67,29 @@ internal fun FormScreen(
     onSubmit: (() -> Unit)? = null,
     confirmDismiss: (() -> Boolean)? = null,
 ) {
-    var index by rememberSaveable { mutableIntStateOf(0) }
+    var saved by rememberSaveable { mutableIntStateOf(0) }
+    val pager = rememberPagerState(initialPage = saved.coerceIn(0, steps.lastIndex)) { steps.size }
+    val scope = rememberCoroutineScope()
+    val focus = androidx.compose.ui.platform.LocalFocusManager.current
+    val index = pager.currentPage
     val step = steps[index.coerceIn(0, steps.lastIndex)]
     val last = index >= steps.lastIndex
+    // Swiping ahead is only allowed up to the first step that is not filled in yet.
+    val reach = steps.indexOfFirst { !it.valid }.let { if (it < 0) steps.lastIndex else it }
+    LaunchedEffect(pager.settledPage, reach) {
+        saved = pager.settledPage
+        focus.clearFocus()
+        if (pager.settledPage > reach) pager.animateScrollToPage(reach)
+    }
+    fun goTo(page: Int) {
+        scope.launch { pager.animateScrollToPage(page.coerceIn(0, steps.lastIndex)) }
+    }
     val latestConfirmDismiss = rememberUpdatedState(confirmDismiss)
     fun close() {
         if (!model.busy && latestConfirmDismiss.value?.invoke() != false) dismiss()
     }
     fun back() {
-        if (index > 0) index-- else close()
+        if (index > 0) goTo(index - 1) else close()
     }
     BackHandler(onBack = ::back)
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -92,10 +111,14 @@ internal fun FormScreen(
                 if (steps.size > 1) {
                     Text(
                         "Step ${index + 1} of ${steps.size}",
-                        modifier = Modifier.padding(end = 16.dp),
+                        modifier = Modifier.padding(end = if (index > 0) 0.dp else 16.dp),
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.primary,
                     )
+                }
+                // Past the first step the left button is "back", so closing gets its own button.
+                if (index > 0) {
+                    IconButton(onClick = ::close, enabled = !model.busy) { Icon(Icons.Rounded.Close, "Close") }
                 }
             }
             if (steps.size > 1) {
@@ -110,24 +133,31 @@ internal fun FormScreen(
                 }
             }
             if (model.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-            Column(
-                Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())
-                    .padding(horizontal = 24.dp, vertical = 20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                Text(
-                    step.title,
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                )
-                if (step.subtitle.isNotBlank()) {
+            HorizontalPager(
+                state = pager,
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                beyondViewportPageCount = 1,
+            ) { page ->
+                val pageStep = steps[page]
+                Column(
+                    Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+                        .padding(horizontal = 24.dp, vertical = 20.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
                     Text(
-                        step.subtitle,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        pageStep.title,
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
                     )
+                    if (pageStep.subtitle.isNotBlank()) {
+                        Text(
+                            pageStep.subtitle,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    pageStep.content(this)
                 }
-                step.content(this)
             }
             if (!last || onSubmit != null) {
                 HorizontalDivider()
@@ -150,7 +180,7 @@ internal fun FormScreen(
                         ) { Text(submitLabel) }
                     } else {
                         Button(
-                            onClick = { index++ },
+                            onClick = { goTo(index + 1) },
                             enabled = !model.busy && step.valid,
                             modifier = Modifier.weight(1f),
                         ) { Text("Next") }

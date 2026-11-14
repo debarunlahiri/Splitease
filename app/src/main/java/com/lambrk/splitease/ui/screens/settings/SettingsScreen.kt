@@ -2,6 +2,14 @@
 
 package com.lambrk.splitease.ui.screens.settings
 
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.PrivacyTip
+import com.lambrk.splitease.ui.i18n.tr
+
 import android.Manifest
 import android.app.Activity
 import android.content.ActivityNotFoundException
@@ -39,7 +47,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
+import com.lambrk.splitease.ui.i18n.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.TopAppBar
@@ -130,14 +138,14 @@ internal fun SettingsScreen(
             if (granted && allowed) {
                 model.enablePush(true)
             } else {
-                model.message = "Allow notifications to get push alerts."
+                model.message = tr("Allow notifications to get push alerts.")
                 // After two refusals Android no longer shows the dialog, so point to the settings.
                 val activity = context.findActivity()
                 val blocked = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                    (activity == null || !ActivityCompat.shouldShowRequestPermissionRationale(
-                        activity,
-                        Manifest.permission.POST_NOTIFICATIONS,
-                    ))
+                        (activity == null || !ActivityCompat.shouldShowRequestPermissionRationale(
+                            activity,
+                            Manifest.permission.POST_NOTIFICATIONS,
+                        ))
                 if (blocked && openNotificationSettings(context)) waitingForSettings = true
             }
         }
@@ -169,15 +177,76 @@ internal fun SettingsScreen(
                     Field(
                         value = displayName,
                         change = { if (it.length <= 100) displayName = it },
-                        label = "Display name",
+                        label = tr("Display name"),
                         enabled = canEditName,
                     )
                     Button(
                         onClick = { model.updateDisplayName(displayName) },
                         enabled = canEditName && displayName.trim().length >= 2 &&
-                            displayName.trim() != currentName,
+                                displayName.trim() != currentName,
                     ) {
-                        Text("Save name")
+                        Text(tr("Save name"))
+                    }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    val context = androidx.compose.ui.platform.LocalContext.current
+                    val chosenIso = model.user?.optString("country").orEmpty().ifBlank { null }
+                    // Another phone may have set it already: keep this one in step.
+                    androidx.compose.runtime.LaunchedEffect(chosenIso) {
+                        if (chosenIso != null && com.lambrk.splitease.ui.util.chosenCountry(context)?.iso != chosenIso) {
+                            com.lambrk.splitease.ui.util.saveChosenCountry(context, chosenIso)
+                        }
+                    }
+                    var pickingCountry by rememberSaveable { mutableStateOf(false) }
+                    val country = com.lambrk.splitease.ui.util.defaultCountry(context)
+                    androidx.compose.foundation.layout.Row(
+                        Modifier.fillMaxWidth().clickable(role = Role.Button) { pickingCountry = true }.padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        com.lambrk.splitease.ui.screens.profile.Flag(country.iso, width = 32.dp)
+                        Column(Modifier.weight(1f)) {
+                            Text("Country", fontWeight = FontWeight.Medium)
+                            Text(
+                                "${country.name} · used for phone numbers and currency",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null)
+                    }
+                    if (pickingCountry) {
+                        com.lambrk.splitease.ui.screens.profile.CountryPicker(
+                            onPick = { pickingCountry = false; model.saveCountry(it.iso) },
+                            onDismiss = { pickingCountry = false },
+                        )
+                    }
+                }
+            }
+            item { SectionTitle("Language") }
+            item {
+                Panel {
+                    Column(Modifier.selectableGroup()) {
+                        com.lambrk.splitease.ui.i18n.I18n.languages.forEach { language ->
+                            val selected = com.lambrk.splitease.ui.i18n.I18n.lang == language.code
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 48.dp)
+                                    .selectable(
+                                        selected = selected,
+                                        role = Role.RadioButton,
+                                        onClick = { model.selectLanguage(language.code) },
+                                    ),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                RadioButton(selected = selected, onClick = null)
+                                Text(
+                                    language.nativeName,
+                                    style = MaterialTheme.typography.bodyLarge
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -200,7 +269,7 @@ internal fun SettingsScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 RadioButton(selected = selected, onClick = null)
-                                Text(mode.label, style = MaterialTheme.typography.bodyLarge)
+                                Text(tr(mode.label), style = MaterialTheme.typography.bodyLarge)
                             }
                         }
                     }
@@ -210,15 +279,15 @@ internal fun SettingsScreen(
             item {
                 Panel {
                     PreferenceSwitch(
-                        title = "Activity inbox",
-                        description = "Show group and friend updates in Activity.",
+                        title = tr("Activity inbox"),
+                        description = tr("Show updates about your Splits and friends in Activity."),
                         checked = preferences?.optBoolean("inboxEnabled") ?: true,
                         enabled = canEditPreferences,
                         onCheckedChange = model::toggleInbox,
                     )
                     PreferenceSwitch(
-                        title = "Push notifications",
-                        description = "Get invitations and expense updates on this device.",
+                        title = tr("Push notifications"),
+                        description = tr("Get invites and split updates on this device."),
                         // On only when it is saved AND the phone allows notifications.
                         checked = (preferences?.optBoolean("pushEnabled") ?: false) && allowed,
                         enabled = canEditPreferences,
@@ -228,14 +297,16 @@ internal fun SettingsScreen(
                                 !enabled -> model.enablePush(false)
                                 allowed -> model.enablePush(true)
                                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                                    ContextCompat.checkSelfPermission(
-                                        context,
-                                        Manifest.permission.POST_NOTIFICATIONS,
-                                    ) != PackageManager.PERMISSION_GRANTED ->
+                                        ContextCompat.checkSelfPermission(
+                                            context,
+                                            Manifest.permission.POST_NOTIFICATIONS,
+                                        ) != PackageManager.PERMISSION_GRANTED ->
                                     permission.launch(Manifest.permission.POST_NOTIFICATIONS)
+
                                 else -> {
                                     // Permission is there but notifications are switched off in the system.
-                                    model.message = "Turn on notifications for SplitEase, then come back."
+                                    model.message =
+                                        tr("Turn on notifications for SplitEase, then come back.")
                                     if (openNotificationSettings(context)) waitingForSettings = true
                                 }
                             }
@@ -247,7 +318,7 @@ internal fun SettingsScreen(
             item {
                 Panel {
                     Text(
-                        "Need help with SplitEase, or want to report a problem? Email us for support.",
+                        tr("Need help with SplitEase, or want to report a problem? Email us for support."),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -256,11 +327,15 @@ internal fun SettingsScreen(
                     }
                     OutlinedButton(
                         onClick = {
-                            val email = Intent(Intent.ACTION_SENDTO, Uri.fromParts("mailto", SUPPORT_EMAIL, null))
+                            val email = Intent(
+                                Intent.ACTION_SENDTO,
+                                Uri.fromParts("mailto", SUPPORT_EMAIL, null)
+                            )
                             try {
                                 context.startActivity(email)
                             } catch (_: ActivityNotFoundException) {
-                                model.error = "No email app is installed. You can copy $SUPPORT_EMAIL from Settings."
+                                model.error =
+                                    "No email app is installed. You can copy $SUPPORT_EMAIL from Settings."
                             }
                         },
                     ) {
@@ -269,7 +344,7 @@ internal fun SettingsScreen(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Icon(Icons.Rounded.Email, contentDescription = null)
-                            Text("Contact support")
+                            Text(tr("Contact support"))
                         }
                     }
                 }
@@ -289,11 +364,26 @@ internal fun SettingsScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Icon(Icons.AutoMirrored.Rounded.Logout, contentDescription = null)
-                        Text("Sign out")
+                        Text(tr("Sign out"))
                     }
                 }
             }
             item { SectionTitle("About") }
+            item {
+                var showPrivacy by rememberSaveable { mutableStateOf(false) }
+                Panel {
+                    androidx.compose.foundation.layout.Row(
+                        Modifier.fillMaxWidth().clickable(role = Role.Button) { showPrivacy = true }.padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Icon(Icons.Rounded.PrivacyTip, contentDescription = null)
+                        Text("Privacy policy", Modifier.weight(1f), fontWeight = FontWeight.Medium)
+                        Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null)
+                    }
+                }
+                if (showPrivacy) com.lambrk.splitease.ui.components.PrivacyPolicyDialog { showPrivacy = false }
+            }
             item {
                 Panel {
                     Text("SplitEase", style = MaterialTheme.typography.titleMedium)
@@ -308,8 +398,8 @@ internal fun SettingsScreen(
     if (confirmingSignOut) {
         AlertDialog(
             onDismissRequest = { confirmingSignOut = false },
-            title = { Text("Sign out?") },
-            text = { Text("Are you sure you want to sign out of SplitEase?") },
+            title = { Text(tr("Sign out?")) },
+            text = { Text(tr("Are you sure you want to sign out of SplitEase?")) },
             confirmButton = {
                 TextButton(
                     enabled = !model.busy,
@@ -320,7 +410,7 @@ internal fun SettingsScreen(
                     colors = ButtonDefaults.textButtonColors(
                         contentColor = MaterialTheme.colorScheme.error,
                     ),
-                ) { Text("Sign out") }
+                ) { Text(tr("Sign out")) }
             },
             dismissButton = {
                 TextButton(onClick = { confirmingSignOut = false }) { Text("Cancel") }
@@ -338,12 +428,14 @@ private fun PreferenceSwitch(
     onCheckedChange: (Boolean) -> Unit,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().toggleable(
-            value = checked,
-            enabled = enabled,
-            role = Role.Switch,
-            onValueChange = onCheckedChange,
-        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .toggleable(
+                value = checked,
+                enabled = enabled,
+                role = Role.Switch,
+                onValueChange = onCheckedChange,
+            ),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

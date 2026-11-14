@@ -1,5 +1,7 @@
 package com.lambrk.splitease.ui.components
 
+import com.lambrk.splitease.ui.i18n.tr
+
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color as AndroidColor
@@ -20,7 +22,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import com.lambrk.splitease.ui.i18n.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -64,7 +66,7 @@ internal fun qrBitmap(content: String, size: Int = 768): Bitmap {
 }
 
 /**
- * "Scan to settle": a QR code with the payer's UPI ID and the amount, so friends can pay from any
+ * "Scan to pay": a QR code with the payer's UPI ID and the amount, so friends can pay from any
  * UPI app. When everyone owes the same, one code works for all; otherwise pick a person.
  */
 @Composable
@@ -95,7 +97,7 @@ internal fun UpiQrDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Scan to settle", Modifier.fillMaxWidth(), textAlign = TextAlign.Center) },
+        title = { Text(tr("Scan to pay"), Modifier.fillMaxWidth(), textAlign = TextAlign.Center) },
         text = {
             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
@@ -116,12 +118,12 @@ internal fun UpiQrDialog(
                 Text(money(amount, "INR"), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
                 Text("$payeeName · $upiId", style = MaterialTheme.typography.bodySmall)
                 Text(
-                    "Hold up your phone and let them scan with any UPI app.",
+                    tr("Hold up your phone and let them scan with any UPI app."),
                     style = MaterialTheme.typography.bodySmall,
                     textAlign = TextAlign.Center,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Button(onClick = ::share, Modifier.fillMaxWidth()) { Text("Share QR") }
+                Button(onClick = ::share, Modifier.fillMaxWidth()) { Text(tr("Share QR")) }
             }
         },
         confirmButton = {},

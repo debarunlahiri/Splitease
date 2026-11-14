@@ -22,7 +22,8 @@ android {
         buildConfigField(
             "String",
             "API_BASE_URL",
-            "\"${providers.gradleProperty("SPLITEASE_API_URL").getOrElse("http://192.168.0.135:9890/")}\"",
+//            "\"${providers.gradleProperty("SPLITEASE_API_URL").getOrElse("http://192.168.0.135:9890/")}\"",
+            "\"${providers.gradleProperty("SPLITEASE_API_URL").getOrElse("http://api.lambrk.com:9890/")}\"",
         )
         buildConfigField(
             "String",
@@ -37,7 +38,7 @@ android {
 
     buildTypes {
         release {
-            buildConfigField("String", "API_BASE_URL", "\"http://api.lambrk.com:9890/\"")
+            buildConfigField("String", "API_BASE_URL", "http://api.lambrk.com:9890/")
             optimization {
                 enable = false
             }
@@ -72,6 +73,10 @@ dependencies {
     implementation("io.coil-kt:coil-svg:2.7.0")
     // Draws the UPI payment QR code.
     implementation("com.google.zxing:core:3.5.3")
+    // Phone number rules for every country: valid lengths, formats and calling codes.
+    implementation("io.michaelrocks:libphonenumber-android:8.13.50")
+    // Reads receipts on the phone itself (free, works offline, nothing is uploaded).
+    implementation("com.google.mlkit:text-recognition:16.0.1")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
